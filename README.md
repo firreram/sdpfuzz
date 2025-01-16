@@ -11,7 +11,7 @@ L2Fuzz uses python3.6.9 and scapy 2.4.4. Also, it uses Bluetooth Dongle.
 sudo apt-get install python3-pip
 pip3 install scapy==2.4.4
 sudo apt-get install libbluetooth-dev
-sudo pip3 install pybluez
+sudo pip3 install git+https://github.com/pybluez/pybluez.git#egg=pybluez
 pip3 install python-statemachine
 pip3 install ouilookup
 ```
