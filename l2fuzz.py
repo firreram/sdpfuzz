@@ -7,6 +7,7 @@ from ouilookup import OuiLookup
 from collections import OrderedDict
 
 from l2cap_fuzzer import *
+from sdp_fuzzer import *
 
 now = datetime.now()
 nowTime = now.strftime('%H%M%S')
@@ -234,7 +235,18 @@ def bluetooth_classic_scan():
             break
         else:
             print("[-] Out of range.")
-    
+
+    fuzzer_choice = 0
+    while(True):
+        print("Fuzzer List: \n")
+        print("1. L2CAP\n2. SDP")
+        user_choice = int(input("\nChoose Fuzzer :"))
+        if user_choice == 1 or user_choice == 2:
+            fuzzer_choice = user_choice
+            break
+        else:
+            print("Select a valid fuzzer")
+
     addr_chosen = nearby_devices[idx][0]
     test_info['bdaddr'] = str(nearby_devices[idx][0])
     oui = OuiLookup().query(addr_chosen)
@@ -243,7 +255,7 @@ def bluetooth_classic_scan():
     test_info['Class of Device Value'] = str(nearby_devices[idx][2])
     test_info['Class of Device'] = bluetooth_class_of_device(hex(nearby_devices[idx][2]))
 
-    return addr_chosen
+    return addr_chosen, fuzzer_choice
 
 
 def bluetooth_services_and_protocols_search(bt_addr):
@@ -288,22 +300,25 @@ def bluetooth_services_and_protocols_search(bt_addr):
 if __name__== "__main__":
     # targetting
     #bluetooth_reset()
-    target_addr = bluetooth_classic_scan()
-    target_service =  bluetooth_services_and_protocols_search(target_addr)
-    target_protocol = target_service['protocol']
-    target_profile = target_service['name']
-    target_profile_port = target_service['port']
+    target_addr, fuzzer_choice = bluetooth_classic_scan()
+    if fuzzer_choice == 1:
+        target_service =  bluetooth_services_and_protocols_search(target_addr)
+        target_protocol = target_service['protocol']
+        target_profile = target_service['name']
+        target_profile_port = target_service['port']
 
-    print("\n===================Test Informatoin===================")
-    print(json.dumps(test_info, ensure_ascii=False, indent="\t"))
-    print("======================================================\n")
+        print("\n===================Test Informatoin===================")
+        print(json.dumps(test_info, ensure_ascii=False, indent="\t"))
+        print("======================================================\n")
 
 
-    # Protocol fuzzing
-    if(target_protocol == "L2CAP"):
-        l2cap_fuzzing(target_addr, target_profile, target_profile_port, test_info)
-    else: 
-        print("Not Supported")
+        # Protocol fuzzing
+        if(target_protocol == "L2CAP"):
+            l2cap_fuzzing(target_addr, target_profile, target_profile_port, test_info)
+        else: 
+            print("Not Supported")
+    else:
+        sdp_fuzzing()
 
 
    
