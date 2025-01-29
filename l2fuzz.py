@@ -28,6 +28,11 @@ def bluetooth_reset():
     test_info["reset"] = "Y"
     time.sleep(3)
 
+def bluetooth_restart():
+    print('\nRestarting Bluetooth...')
+    os.system("sudo service bluetooth restart")
+    time.sleep(3)
+
 def bluetooth_class_of_device(device_class):
     # https://github.com/mikeryan/btclassify.git
 
@@ -210,7 +215,7 @@ def bluetooth_classic_scan():
 
     while(True):
         # Scan for nearby devices in regular bluetooth mode
-        nearby_devices = bluetooth.discover_devices(duration=3, flush_cache=True, lookup_names=True, lookup_class=True)
+        nearby_devices = bluetooth.discover_devices(duration=6, flush_cache=True, lookup_names=True, lookup_class=True)
         i = 0
         print("\n\tTarget Bluetooth Device List")
         print("\t[No.]\t[BT address]\t\t[Device name]\t\t[Device Class]\t\t[OUI]")
@@ -300,6 +305,7 @@ def bluetooth_services_and_protocols_search(bt_addr):
 if __name__== "__main__":
     # targetting
     #bluetooth_reset()
+    bluetooth_restart()
     target_addr, fuzzer_choice = bluetooth_classic_scan()
     if fuzzer_choice == 1:
         target_service =  bluetooth_services_and_protocols_search(target_addr)
@@ -318,7 +324,7 @@ if __name__== "__main__":
         else: 
             print("Not Supported")
     else:
-        sdp_fuzzing()
+        sdp_fuzzing(target_addr, test_info)
 
 
    
