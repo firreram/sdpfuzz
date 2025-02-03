@@ -1,13 +1,11 @@
 import sys, os, subprocess
 import json, datetime
-import bluetooth
-from statemachine import StateMachine, State
 from scapy.all import *
 from scapy.packet import Packet
 from random import *
 from collections import OrderedDict
 import struct
-
+import uuid
 
 
 REQ_PDU_ID = {
@@ -52,8 +50,19 @@ ASSIGNED_SERVICE_UUID = {
     "Message Access Server": "00001132-0000-1000-8000-00805f9b34fb"
 }
 
+TYPE_DESCRIPTOR_CODE = {
+    "NULL": 0x00,
+    "Unsigned Integer": 0x01,
+    "Signed two’s-complement integer": 0x02,
+    "UUID": 0x03,
+    "Text String": 0x04,
+    "Boolean": 0x05,
+    "Data Element Sequence": 0x06,
+    "Data Element alternative": 0x07,
+    "URL": 0x08
+}
 
-# Define SDP Data Element types
+# Enhanced Data Element with proper length handling
 class DataElement(Packet):
     name = "Data Element"
     fields_desc = [
@@ -62,40 +71,97 @@ class DataElement(Packet):
                     length_from=lambda pkt: (pkt.type_size & 0x07) + 1)
     ]
     
+    def post_build(self, p, pay):
+        # Auto-calculate type_size if not specified
+        if self.type_size == 0 and self.value:
+            size = len(self.value) - 1
+            elem_type = 0x19  # UUID type
+            p = bytes([(elem_type << 3) | size]) + p[1:]
+        return p + pay
+
     def extract_uuid(self):
         elem_type = (self.type_size >> 3) & 0x1F
         size_indicator = self.type_size & 0x07
         
         if elem_type == 0x19:  # UUID type
-            if size_indicator == 0x01:  # 16-bit UUID
-                return struct.unpack(">H", self.value)[0]
-            elif size_indicator == 0x03:  # 128-bit UUID
-                return uuid.UUID(bytes=self.value)
+            try:
+                if size_indicator == 0x01:  # 16-bit UUID
+                    return uuid.UUID(bytes=bytes([0])*14 + self.value)
+                elif size_indicator == 0x03:  # 32-bit UUID
+                    return uuid.UUID(bytes=bytes([0])*12 + self.value)
+                elif size_indicator == 0x07:  # 128-bit UUID
+                    return uuid.UUID(bytes=self.value)
+            except:
+                return "Invalid UUID"
         return None
 
+# Enhanced Data Element Sequence with proper length calculation
 class DataElementSequence(Packet):
     name = "Data Element Sequence"
     fields_desc = [
-        ByteField("desc", 0x35),  # Data Element Sequence descriptor
-        FieldLenField("length", None, fmt="H", length_of="elements"),
+        ByteField("desc", 0x35),
+        FieldLenField("length", None, fmt="H", length_of="elements",
+                     adjust=lambda pkt,x: x + 3),  # Account for desc(1) + length(2)
         PacketListField("elements", None, DataElement,
-                       length_from=lambda pkt: pkt.length)
+                       length_from=lambda pkt: pkt.length - 3)
     ]
 
-# Modified SDP Service Search Request
+    def post_build(self, p, pay):
+        # Auto-calculate length if not specified
+        if self.length is None:
+            elements_len = sum(len(e) for e in self.elements) if self.elements else 0
+            total_len = elements_len + 3  # desc(1) + length(2)
+            p = p[0:1] + struct.pack(">H", total_len) + p[3:]
+        return p + pay
+
+# Enhanced SDP Service Search Request
 class SDP_ServiceSearchRequest(Packet):
     name = "SDP Service Search Request"
     fields_desc = [
         ByteField("pdu_id", 0x02),
         ShortField("tid", 0),
-        FieldLenField("plen", None, fmt="H", length_of="payload"),
+        FieldLenField("plen", None, fmt="H", length_of="payload",
+                     adjust=lambda pkt,x: x + 5),  # Fixed header fields size
         PacketListField("service_search_pattern", None, DataElementSequence,
                        length_from=lambda pkt: pkt.plen - 5),
-        ShortField("max_service_record_count", 0xFFFF),
+        ShortField("max_service_record_count", 10),
         ByteField("continuation_state_length", 0),
         StrLenField("continuation_state", b"", 
                    length_from=lambda x: x.continuation_state_length),
     ]
+
+    def post_build(self, p, pay):
+        # Auto-calculate plen if not specified
+        if self.plen is None:
+            payload_len = len(bytes(self.service_search_pattern)) if self.service_search_pattern else 0
+            plen = payload_len + 5  # Fixed fields size
+            p = p[:3] + struct.pack(">H", plen) + p[5:]
+        return p + pay
+
+def create_uuid_element(uuid_str):
+    try:
+        uuid_obj = uuid.UUID(uuid_str)
+        elem = DataElement()
+        
+        if uuid_obj.version == 4:  # 128-bit UUID
+            elem.value = uuid_obj.bytes
+            elem.type_size = 0x19 | 0x07  # Type 0x19, size 0x07 (16 bytes)
+        else:
+            short_uuid = uuid_obj.int >> 96
+            if short_uuid <= 0xFFFF:  # 16-bit UUID
+                elem.value = struct.pack(">H", short_uuid)
+                elem.type_size = 0x19 | 0x01  # Type 0x19, size 0x01 (2 bytes)
+            else:  # 32-bit UUID
+                elem.value = struct.pack(">I", short_uuid)
+                elem.type_size = 0x19 | 0x03  # Type 0x19, size 0x03 (4 bytes)
+        return elem
+    except ValueError:
+        return None
+
+def build_service_search_pattern(uuids):
+    seq = DataElementSequence()
+    seq.elements = [create_uuid_element(u.strip()) for u in uuids if u.strip()]
+    return seq
 
 # Modified SDP Service Search Response
 class SDP_ServiceSearchResponse(Packet):
@@ -113,27 +179,70 @@ class SDP_ServiceSearchResponse(Packet):
                    length_from=lambda x: x.continuation_state_length),
     ]
 
-def create_uuid_element(uuid_str):
-    try:
+def build_sdp_request(tid=0x0001, max_record=10, uuid_list=[ASSIGNED_SERVICE_UUID["Service Discovery Server"]]):
+    # 1. Build Data Elements
+    data_elements = []
+    print("Building UUID data elements")
+    uuid_type_code = TYPE_DESCRIPTOR_CODE["UUID"]
+    for uuid_str in uuid_list:
+        print(f"UUID: {uuid_str}")
         uuid_obj = uuid.UUID(uuid_str)
-        elem = DataElement()
-        
+        print(f"UUID obj: {uuid_obj}")
+        # Determine UUID type and size
         if uuid_obj.version == 4:  # 128-bit UUID
-            elem.type_size = 0x19 | (0x07 << 3)  # Type 0x19 (UUID), size 0x07 (16 bytes)
-            elem.value = uuid_obj.bytes
+            print("UUID is 128bits")
+            elem_type = uuid_type_code << 3 | 0x07  # UUID type (0x19), 16 bytes (0x07)
+            value = uuid_obj.bytes
         else:  # 16/32-bit UUID
+            print("UUID is not 128 bits")
             short_uuid = uuid_obj.int >> 96
-            if short_uuid <= 0xFFFF:  # 16-bit UUID
-                elem.type_size = 0x19 | (0x01 << 3)  # Size 0x01 (2 bytes)
-                elem.value = struct.pack(">H", short_uuid)
-            else:  # 32-bit UUID
-                elem.type_size = 0x19 | (0x03 << 3)  # Size 0x03 (4 bytes)
-                elem.value = struct.pack(">I", short_uuid)
-        return elem
-    except ValueError:
-        return None
+            if short_uuid <= 0xFFFF:
+                print("16 bits")
+                elem_type = uuid_type_code << 3 | 0x01  # 2 bytes
+                value = struct.pack(">H", short_uuid)
+            else:
+                print("32 bits")
+                elem_type = uuid_type_code << 3 | 0x03  # 4 bytes
+                value = struct.pack(">I", short_uuid)
+        
+        data_elements.append(struct.pack("B", elem_type) + value)
+    print(data_elements)
+    # 2. Build Data Element Sequence
+    elements_payload = b"".join(data_elements)
+    seq_len = len(elements_payload) + 3
+    print(f"Data Element Sequence length = {seq_len}")
+    seq_header = b"\x35" + struct.pack(">H", seq_len)  # 0x35 + length
+    service_search_pattern = seq_header + elements_payload
 
-def build_service_search_pattern(uuids):
-    seq = DataElementSequence()
-    seq.elements = [create_uuid_element(u) for u in uuids if create_uuid_element(u)]
-    return seq
+    # 3. Build SDP Request
+    pdu_header = struct.pack(">BHH", 
+                           0x02,  # PDU ID
+                           tid,  # Transaction ID
+                           len(service_search_pattern) + 5)  # plen
+    
+    max_records = struct.pack(">H", max_record)  # Max service records
+    continuation = b"\x00"  # No continuation state
+
+    return pdu_header + service_search_pattern + max_records + continuation
+
+def parse_sdp_response(response):
+    # Basic response parsing
+    try:
+        pdu_id = response[0]
+        tid = struct.unpack(">H", response[1:3])[0]
+        plen = struct.unpack(">H", response[3:5])[0]
+        total_records = struct.unpack(">H", response[5:7])[0]
+        current_records = struct.unpack(">H", response[7:9])[0]
+        
+        print(f"SDP Response (TID: {tid:04x})")
+        print(f"Total Records: {total_records}")
+        print(f"Current Records: {current_records}")
+        
+        # Parse handle list
+        handle_data = response[9:-2]  # Skip continuation state
+        if handle_data.startswith(b"\x35"):
+            seq_len = struct.unpack(">H", handle_data[1:3])[0]
+            print(f"Found {seq_len - 3} bytes of handle data")
+            
+    except Exception as e:
+        print(f"Parse error: {str(e)}")
