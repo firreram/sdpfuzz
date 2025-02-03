@@ -62,6 +62,17 @@ TYPE_DESCRIPTOR_CODE = {
     "URL": 0x08
 }
 
+SIZE_DESCRIPTOR_CODE = {
+    "1Byte": 0x00,
+    "2Bytes": 0x01,
+    "4Bytes": 0x02,
+    "8Bytes": 0x03,
+    "16Bytes": 0x04,
+    "Data_Size_Additional_8_bits": 0x05,
+    "Data_Size_Additional_16_bits": 0x06,
+    "Data_Size_Additional_32_bits": 0x07
+}
+
 # Enhanced Data Element with proper length handling
 class DataElement(Packet):
     name = "Data Element"
@@ -179,46 +190,68 @@ class SDP_ServiceSearchResponse(Packet):
                    length_from=lambda x: x.continuation_state_length),
     ]
 
+# helper function to build prot descriptor header
+# idea is to have a unified area to build in case protocol spec changes 
+def build_prot_descriptor_header(type_code, size_code):
+    return type_code << 3 | size_code
+
+def build_uuid_struct(uuid_str):
+    print(f"UUID: {uuid_str}")
+    uuid_type_code = TYPE_DESCRIPTOR_CODE["UUID"]
+    uuid_size_code = SIZE_DESCRIPTOR_CODE["2Bytes"]
+    uuid_obj = uuid.UUID(uuid_str)
+    print(f"UUID obj: {uuid_obj}")
+    # Determine UUID type and size
+    if uuid_obj.version == 4:  # 128-bit UUID
+        print("UUID is 128bits")
+        uuid_size_code = SIZE_DESCRIPTOR_CODE["16Bytes"]
+        elem_type = build_prot_descriptor_header(uuid_type_code, uuid_size_code)
+        value = uuid_obj.bytes
+    else:  # 16/32-bit UUID
+        print("UUID is not 128 bits")
+        short_uuid = uuid_obj.int >> 96
+        if short_uuid <= 0xFFFF:
+            print("16 bits")
+            elem_type = build_prot_descriptor_header(uuid_type_code, uuid_size_code)
+            value = struct.pack(">H", short_uuid)
+        else:
+            print("32 bits")
+            uuid_size_code = SIZE_DESCRIPTOR_CODE["4Bytes"]
+            elem_type = build_prot_descriptor_header(uuid_type_code, uuid_size_code)
+            value = struct.pack(">I", short_uuid)
+            
+    uuid_struct = struct.pack("B", elem_type) + value
+    return uuid_struct
+
+
+
 def build_sdp_request(tid=0x0001, max_record=10, uuid_list=[ASSIGNED_SERVICE_UUID["Service Discovery Server"]]):
     # 1. Build Data Elements
     data_elements = []
     print("Building UUID data elements")
-    uuid_type_code = TYPE_DESCRIPTOR_CODE["UUID"]
+    data_seq_type_code = TYPE_DESCRIPTOR_CODE["Data Element Sequence"]
+    data_seq_size_code = SIZE_DESCRIPTOR_CODE["Data_Size_Additional_8_bits"]
+    data_seq_header = struct.pack("B",build_prot_descriptor_header(data_seq_type_code, data_seq_size_code))
+    
+    print("Building UUID elements")
     for uuid_str in uuid_list:
-        print(f"UUID: {uuid_str}")
-        uuid_obj = uuid.UUID(uuid_str)
-        print(f"UUID obj: {uuid_obj}")
-        # Determine UUID type and size
-        if uuid_obj.version == 4:  # 128-bit UUID
-            print("UUID is 128bits")
-            elem_type = uuid_type_code << 3 | 0x07  # UUID type (0x19), 16 bytes (0x07)
-            value = uuid_obj.bytes
-        else:  # 16/32-bit UUID
-            print("UUID is not 128 bits")
-            short_uuid = uuid_obj.int >> 96
-            if short_uuid <= 0xFFFF:
-                print("16 bits")
-                elem_type = uuid_type_code << 3 | 0x01  # 2 bytes
-                value = struct.pack(">H", short_uuid)
-            else:
-                print("32 bits")
-                elem_type = uuid_type_code << 3 | 0x03  # 4 bytes
-                value = struct.pack(">I", short_uuid)
+        uuid_struct = build_uuid_struct(uuid_str)       
+        data_elements.append(uuid_struct)
         
-        data_elements.append(struct.pack("B", elem_type) + value)
     print(data_elements)
     # 2. Build Data Element Sequence
     elements_payload = b"".join(data_elements)
-    seq_len = len(elements_payload) + 3
-    print(f"Data Element Sequence length = {seq_len}")
-    seq_header = b"\x35" + struct.pack(">H", seq_len)  # 0x35 + length
+    payload_len = len(elements_payload)
+    #seq_len = len(elements_payload) + 3
+    print(f"Data Element Sequence length = {payload_len}")
+    seq_header = data_seq_header + struct.pack(">B", payload_len) 
     service_search_pattern = seq_header + elements_payload
 
     # 3. Build SDP Request
     pdu_header = struct.pack(">BHH", 
                            0x02,  # PDU ID
                            tid,  # Transaction ID
-                           len(service_search_pattern) + 5)  # plen
+                           len(service_search_pattern) + 3)  # plen
     
     max_records = struct.pack(">H", max_record)  # Max service records
     continuation = b"\x00"  # No continuation state
@@ -229,20 +262,23 @@ def parse_sdp_response(response):
     # Basic response parsing
     try:
         pdu_id = response[0]
-        tid = struct.unpack(">H", response[1:3])[0]
-        plen = struct.unpack(">H", response[3:5])[0]
-        total_records = struct.unpack(">H", response[5:7])[0]
-        current_records = struct.unpack(">H", response[7:9])[0]
-        
-        print(f"SDP Response (TID: {tid:04x})")
-        print(f"Total Records: {total_records}")
-        print(f"Current Records: {current_records}")
-        
-        # Parse handle list
-        handle_data = response[9:-2]  # Skip continuation state
-        if handle_data.startswith(b"\x35"):
-            seq_len = struct.unpack(">H", handle_data[1:3])[0]
-            print(f"Found {seq_len - 3} bytes of handle data")
+        if pdu_id != 0x01:
+            tid = struct.unpack(">H", response[1:3])[0]
+            plen = struct.unpack(">H", response[3:5])[0]
+            total_records = struct.unpack(">H", response[5:7])[0]
+            current_records = struct.unpack(">H", response[7:9])[0]
+            
+            print(f"SDP Response (TID: {tid:04x})")
+            print(f"Total Records: {total_records}")
+            print(f"Current Records: {current_records}")
+            
+            # Parse handle list
+            handle_data = response[9:-2]  # Skip continuation state
+            if handle_data.startswith(b"\x35"):
+                seq_len = struct.unpack(">H", handle_data[1:3])[0]
+                print(f"Found {seq_len - 3} bytes of handle data")
+        else: #SDP Response Error
+            print("SDP Response error")
             
     except Exception as e:
         print(f"Parse error: {str(e)}")

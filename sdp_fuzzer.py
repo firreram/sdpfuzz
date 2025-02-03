@@ -20,7 +20,7 @@ def sdp_fuzzing(bt_addr, test_info):
     try:
         print("Testing")
         
-        service_uuids = [ASSIGNED_SERVICE_UUID["Service Discovery Server"]]
+        service_uuids = [ASSIGNED_SERVICE_UUID["Service Discovery Server"], ASSIGNED_SERVICE_UUID["Browse Group Descriptor"]]
         sdp_packet = build_sdp_request(current_tranid, 10, service_uuids)
         print("Crafted packet bytes:", sdp_packet.hex())
         print("Breakdown:")
