@@ -20,8 +20,8 @@ def sdp_fuzzing(bt_addr, test_info):
     try:
         print("Testing")
         
-        service_uuids = [ASSIGNED_SERVICE_UUID["Service Discovery Server"], ASSIGNED_SERVICE_UUID["Browse Group Descriptor"]]
-        sdp_packet = build_sdp_request(current_tranid, 10, service_uuids)
+        service_uuids = [ASSIGNED_SERVICE_UUID["Public Browse Group"]]
+        sdp_packet = build_sdp_search_request(current_tranid, 0xFFFF, service_uuids)
         print("Crafted packet bytes:", sdp_packet.hex())
         print("Breakdown:")
         print(f"PDU Header: {sdp_packet[0:5].hex()} (PDU ID, TID, plen)")
@@ -33,6 +33,7 @@ def sdp_fuzzing(bt_addr, test_info):
 
 
         sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
+        sock.settimeout(5)
         sock.connect((bt_addr, 1))  # SDP channel
         
         sock.send(sdp_packet)
@@ -40,7 +41,7 @@ def sdp_fuzzing(bt_addr, test_info):
         
         # Receive response
         response = sock.recv(4096)
-        print("\n[+] Received SDP response:")    
+        print(f"\n[+] Received SDP response: {response}")     
         parse_sdp_response(response)
     except Exception as e:
        print(e)
