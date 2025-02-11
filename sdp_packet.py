@@ -191,18 +191,49 @@ def build_uuid_struct(uuid_str):
 	uuid_struct = struct.pack("B", elem_type) + value
 	return uuid_struct
 
-def build_sdp_service_attr_request_by_IDs(tid, service_record_handle, max_attr_byte_count, attribute_list):
+def build_sdp_service_search_attr_request(tid=0x0001, uuid_list=[ASSIGNED_SERVICE_UUID["Service Discovery Server"]],max_attr_byte_count=0x0007, attribute_list=[{"attribute_id":0x0001, "isRange":False}] ):
+	#1) build search pattern first
+	service_search_pattern = build_sdp_search_pattern(uuid_list)
+ 
+	#2) build attribute pattern
+	attribute_pattern = build_attribute_list_pattern(attribute_list)
+ 
+	#3) calculate length, should be len(ssp) + len(ap) + len(max_attr_count) + len(continuation_state)
+	pattern_length = len(service_search_pattern) + len(attribute_pattern) + 3
+	
+	#4) Build the struct for max_attr_count first
+	max_attr_byte_count_pattern = struct.pack(">H", max_attr_byte_count)
+ 
+	#put header together
+	pdu_header = struct.pack(">BHH",
+							0x06,
+							tid,
+							pattern_length
+							)
+ 
+	continuation = b"\x00"
+	return pdu_header + service_search_pattern + max_attr_byte_count_pattern + attribute_pattern + continuation
+ 
+	
+
+def build_attribute_list_pattern(attribute_list=[{"attribute_id":0x0001, "isRange":False}]):
 	data_seq_type_code = TYPE_DESCRIPTOR_CODE["Data Element Sequence"]
 	data_seq_size_code = SIZE_DESCRIPTOR_CODE["Data_Size_Additional_8_bits"]
 	data_seq_header = struct.pack("B",build_prot_descriptor_header(data_seq_type_code, data_seq_size_code))
 	data_elements = []
 	for attr_id in attribute_list:
-		attr_struct = build_attr_id_struct(attr_id, False)
-		data_elements.append(attr_struct)
+		if "attribute_id" in attr_id:
+			isRange = attr_id["isRange"] if "isRange" in attr_id else False
+			attr_struct = build_attr_id_struct(attr_id["attribute_id"], isRange)
+			data_elements.append(attr_struct)
 	elements_payload = b"".join(data_elements)
 	payload_len = len(elements_payload)
 	seq_header = data_seq_header + struct.pack(">B", payload_len)
 	attribute_pattern = seq_header + elements_payload
+	return attribute_pattern
+
+def build_sdp_service_attr_request(tid=0x0001, service_record_handle=0x0001, max_attr_byte_count=0x0007, attribute_list=[{"attribute_id":0x0001, "isRange":False}]):
+	attribute_pattern = build_attribute_list_pattern(attribute_list)
 	
 	pdu_header = struct.pack(">BHHIH",
 							 0x04,
@@ -215,51 +246,28 @@ def build_sdp_service_attr_request_by_IDs(tid, service_record_handle, max_attr_b
 	
 	return pdu_header + attribute_pattern + continuation
 
-def build_sdp_service_attr_request_by_ranges(tid, service_record_handle, max_attr_byte_count, attribute_list):
-	data_seq_type_code = TYPE_DESCRIPTOR_CODE["Data Element Sequence"]
-	data_seq_size_code = SIZE_DESCRIPTOR_CODE["Data_Size_Additional_8_bits"]
-	data_seq_header = struct.pack("B",build_prot_descriptor_header(data_seq_type_code, data_seq_size_code))
+def build_sdp_search_pattern(uuid_list):
 	data_elements = []
-	for attr_id in attribute_list:
-		attr_struct = build_attr_id_struct(attr_id, True)
-		data_elements.append(attr_struct)
-	elements_payload = b"".join(data_elements)
-	payload_len = len(elements_payload)
-	seq_header = data_seq_header + struct.pack(">B", payload_len)
-	attribute_pattern = seq_header + elements_payload
-	
-	pdu_header = struct.pack(">BHHIH",
-							 0x04,
-							 tid,
-							 len(attribute_pattern) + 7,
-							 service_record_handle,
-							 max_attr_byte_count)
-	continuation = b"\x00"
-	
-	
-	return pdu_header + attribute_pattern + continuation
-
-def build_sdp_search_request(tid=0x0001, max_record=10, uuid_list=[ASSIGNED_SERVICE_UUID["Service Discovery Server"]]):
-	# 1. Build Data Elements
-	data_elements = []
-	print("Building UUID data elements")
 	data_seq_type_code = TYPE_DESCRIPTOR_CODE["Data Element Sequence"]
 	data_seq_size_code = SIZE_DESCRIPTOR_CODE["Data_Size_Additional_8_bits"]
 	data_seq_header = struct.pack("B",build_prot_descriptor_header(data_seq_type_code, data_seq_size_code))
 	
-	print("Building UUID elements")
 	for uuid_str in uuid_list:
 		uuid_struct = build_uuid_struct(uuid_str)	   
 		data_elements.append(uuid_struct)
 		
-	print(data_elements)
 	# 2. Build Data Element Sequence
 	elements_payload = b"".join(data_elements)
 	payload_len = len(elements_payload)
 	#seq_len = len(elements_payload) + 3
-	print(f"Data Element Sequence length = {payload_len}")
 	seq_header = data_seq_header + struct.pack(">B", payload_len) 
 	service_search_pattern = seq_header + elements_payload
+	return service_search_pattern
+
+def build_sdp_search_request(tid=0x0001, max_record=10, uuid_list=[ASSIGNED_SERVICE_UUID["Service Discovery Server"]]):
+	# 1. Build Data Elements
+	
+	service_search_pattern = build_sdp_search_pattern(uuid_list)
 
 	# 3. Build SDP Request
 	pdu_header = struct.pack(">BHH", 

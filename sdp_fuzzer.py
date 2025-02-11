@@ -88,7 +88,7 @@ def sdp_fuzzing(bt_addr, test_info):
 				if len(resp_data["handle_list"]) > 0:
 					first_handle = resp_data["handle_list"][0]
 					attr_range = (0x0001 << 16) | 0xFFFF
-					sdp_packet2 = build_sdp_service_attr_request_by_ranges(current_tranid,first_handle,0xFFFF,[attr_range])
+					sdp_packet2 = build_sdp_service_attr_request_by_ranges(current_tranid,first_handle,0xFFFF,[{"attribute_id": attr_range, "isRange": True}])
 					sock, packet_info = send_sdp_packet(bt_addr, sock, sdp_packet2, 0x04, True)
 					if packet_info != "":
 						logger["packet"].append(packet_info)
