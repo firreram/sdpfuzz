@@ -244,7 +244,7 @@ def bluetooth_classic_scan():
 	fuzzer_choice = 0
 	while(True):
 		print("Fuzzer List: \n")
-		print("1. L2CAP\n2. SDP")
+		print("1. L2CAP\n2. SDP\n")
 		user_choice = int(input("\nChoose Fuzzer :"))
 		if user_choice == 1 or user_choice == 2:
 			fuzzer_choice = user_choice

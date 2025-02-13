@@ -64,7 +64,8 @@ def sdp_fuzzing(bt_addr, test_info):
 		print("Start Fuzzing... Please hit Ctrl + C to finish...")
 		try:
 			service_uuids = [ASSIGNED_SERVICE_UUID["Public Browse Group"]]
-			sdp_packet = build_sdp_search_request(current_tranid, 0xFFFF, service_uuids)
+			#sdp_packet = build_sdp_search_request(current_tranid, 0xFFFF, service_uuids)
+			sdp_packet = build_sdp_service_search_attr_request(current_tranid, service_uuids, 0xFFFF, [{"attribute_id":(0x0001 << 16) | 0xFFFF, "isRange": True}])
 			current_tranid += 1
 			# print("Crafted packet bytes:", sdp_packet.hex())
 			# print("Breakdown:")
@@ -84,15 +85,15 @@ def sdp_fuzzing(bt_addr, test_info):
    
 			print(f"\n[+] Received SDP response: {packet_info["response_data"]}")	 
 			resp_data = parse_sdp_response(packet_info["response_data"])
-			if resp_data["handle_list"] is not None:
-				if len(resp_data["handle_list"]) > 0:
-					first_handle = resp_data["handle_list"][0]
-					attr_range = (0x0001 << 16) | 0xFFFF
-					sdp_packet2 = build_sdp_service_attr_request_by_ranges(current_tranid,first_handle,0xFFFF,[{"attribute_id": attr_range, "isRange": True}])
-					sock, packet_info = send_sdp_packet(bt_addr, sock, sdp_packet2, 0x04, True)
-					if packet_info != "":
-						logger["packet"].append(packet_info)
-					#print(packet_info["response_data"])
+			# if resp_data["handle_list"] is not None:
+			# 	if len(resp_data["handle_list"]) > 0:
+			# 		first_handle = resp_data["handle_list"][0]
+			# 		attr_range = (0x0001 << 16) | 0xFFFF
+			# 		sdp_packet2 = build_sdp_service_attr_request_by_ranges(current_tranid,first_handle,0xFFFF,[{"attribute_id": attr_range, "isRange": True}])
+			# 		sock, packet_info = send_sdp_packet(bt_addr, sock, sdp_packet2, 0x04, True)
+			# 		if packet_info != "":
+			# 			logger["packet"].append(packet_info)
+			# 		#print(packet_info["response_data"])
 			print(f"{logger}")
 		except Exception as e:
 			print("[!] Error Message :", e)

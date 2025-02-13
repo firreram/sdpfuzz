@@ -148,7 +148,44 @@ SERVICE_ATTRIBUTE_ID = {
 }
 
 
+def build_packet_from_param_dict(param_dict=None):
+	if param_dict is None:
+		return None
+	pdu_id = param_dict["pdu_id"]
+	if pdu_id == 0x02:
+		packet = build_sdp_search_request(param_dict["current_tranid"], 
+                                    	param_dict["max_records"], 
+                                     	param_dict["service_uuids"], 
+                                      	param_dict["continuation_state"])
+		return packet
+	elif pdu_id == 0x04:
+		packet = build_sdp_service_attr_request(param_dict["current_tranid"], 
+                                          		param_dict["service_handle"], 
+                                            	param_dict["max_attr_byte_count"], 
+                                             	param_dict["attribute_ids"], 
+                                              	param_dict["continuation_state"])
+		return packet
+	elif pdu_id == 0x06:
+		packet = build_sdp_service_search_attr_request(param_dict["current_tranid"],
+                                                 		param_dict["service_uuids"],
+                                                   		param_dict["max_attr_byte_count"],
+                                                     	param_dict["attribute_ids"],
+                                                      	param_dict["continuation_state"])
+		return packet
+	return None
 
+def build_parameter_dictionary(pdu_id=0x00, current_tranid=0x0001, service_handle=0x0000, service_uuids=[], attribute_ids=[], max_records=0, max_attr_byte_counts=0x0000, continuation_state=b'\x00',garbage_value=b'\x00' ):
+	param_dict = {}
+	param_dict["pdu_id"]=pdu_id
+	param_dict["current_tranid"]=current_tranid
+	param_dict["service_handle"]=service_handle
+	param_dict["service_uuids"]=service_uuids
+	param_dict["attribute_ids"]=attribute_ids
+	param_dict["max_records"]=max_records
+	param_dict["max_attr_byte_count"]=max_attr_byte_counts
+	param_dict["continuation_state"]=continuation_state
+	param_dict["garbage_value"]=garbage_value
+	return param_dict
 # helper function to build prot descriptor header
 # idea is to have a unified area to build in case protocol spec changes 
 def build_prot_descriptor_header(type_code, size_code):
@@ -191,7 +228,7 @@ def build_uuid_struct(uuid_str):
 	uuid_struct = struct.pack("B", elem_type) + value
 	return uuid_struct
 
-def build_sdp_service_search_attr_request(tid=0x0001, uuid_list=[ASSIGNED_SERVICE_UUID["Service Discovery Server"]],max_attr_byte_count=0x0007, attribute_list=[{"attribute_id":0x0001, "isRange":False}] ):
+def build_sdp_service_search_attr_request(tid=0x0001, uuid_list=[ASSIGNED_SERVICE_UUID["Service Discovery Server"]],max_attr_byte_count=0x0007, attribute_list=[{"attribute_id":0x0001, "isRange":False}], continuation_state=b'\x00' ):
 	#1) build search pattern first
 	service_search_pattern = build_sdp_search_pattern(uuid_list)
  
@@ -211,8 +248,14 @@ def build_sdp_service_search_attr_request(tid=0x0001, uuid_list=[ASSIGNED_SERVIC
 							pattern_length
 							)
  
-	continuation = b"\x00"
-	return pdu_header + service_search_pattern + max_attr_byte_count_pattern + attribute_pattern + continuation
+	continuation = continuation_state
+	parameter_dict = build_parameter_dictionary(pdu_id=0x06, 
+                                             current_tranid=tid, 
+                                             service_uuids=uuid_list, 
+                                             attribute_ids=attribute_list, 
+                                             max_attr_byte_counts=max_attr_byte_count,
+                                             continuation_state=continuation_state)
+	return parameter_dict, pdu_header + service_search_pattern + max_attr_byte_count_pattern + attribute_pattern + continuation
  
 	
 
@@ -232,7 +275,7 @@ def build_attribute_list_pattern(attribute_list=[{"attribute_id":0x0001, "isRang
 	attribute_pattern = seq_header + elements_payload
 	return attribute_pattern
 
-def build_sdp_service_attr_request(tid=0x0001, service_record_handle=0x0001, max_attr_byte_count=0x0007, attribute_list=[{"attribute_id":0x0001, "isRange":False}]):
+def build_sdp_service_attr_request(tid=0x0001, service_record_handle=0x0001, max_attr_byte_count=0x0007, attribute_list=[{"attribute_id":0x0001, "isRange":False}],continuation_state=b'\x00'):
 	attribute_pattern = build_attribute_list_pattern(attribute_list)
 	
 	pdu_header = struct.pack(">BHHIH",
@@ -241,10 +284,15 @@ def build_sdp_service_attr_request(tid=0x0001, service_record_handle=0x0001, max
 							 len(attribute_pattern) + 7,
 							 service_record_handle,
 							 max_attr_byte_count)
-	continuation = b"\x00"
+	continuation = continuation_state
+	parameter_dict = build_parameter_dictionary(pdu_id=0x04, 
+                                             current_tranid=tid, 
+                                             service_handle=service_record_handle,
+                                             attribute_ids=attribute_list,
+                                             max_attr_byte_counts=max_attr_byte_count,
+                                             continuation_state=continuation_state)
 	
-	
-	return pdu_header + attribute_pattern + continuation
+	return parameter_dict, pdu_header + attribute_pattern + continuation
 
 def build_sdp_search_pattern(uuid_list):
 	data_elements = []
@@ -264,7 +312,7 @@ def build_sdp_search_pattern(uuid_list):
 	service_search_pattern = seq_header + elements_payload
 	return service_search_pattern
 
-def build_sdp_search_request(tid=0x0001, max_record=10, uuid_list=[ASSIGNED_SERVICE_UUID["Service Discovery Server"]]):
+def build_sdp_search_request(tid=0x0001, max_record=10, uuid_list=[ASSIGNED_SERVICE_UUID["Service Discovery Server"]], continuation_state=b'\x00'):
 	# 1. Build Data Elements
 	
 	service_search_pattern = build_sdp_search_pattern(uuid_list)
@@ -277,8 +325,11 @@ def build_sdp_search_request(tid=0x0001, max_record=10, uuid_list=[ASSIGNED_SERV
 	
 	max_records = struct.pack(">H", max_record)  # Max service records
 	continuation = b"\x00"  # No continuation state
-
-	return pdu_header + service_search_pattern + max_records + continuation
+	parameter_dict = build_parameter_dictionary(pdu_id=0x02, current_tranid=
+                                           	tid,service_uuids=uuid_list, 
+                                            max_records=max_record, 
+                                            continuation_state=continuation_state)
+	return parameter_dict, pdu_header + service_search_pattern + max_records + continuation
 
 
 def parse_sdp_response(response):
@@ -316,8 +367,12 @@ def parse_sdp_response(response):
 			continuation_state = handle_data[next_index:]
 			ret_data["handle_list"] = handle_list
 			print(f"Continuation state: {continuation_state}")
+			pass
 		elif pdu_id == 0x05:
 			print("Service attribute response")
+			pass
+		elif pdu_id == 0x07:
+			print("Service search attribute response")
 			pass
 		else: #SDP Response Error
 			print("SDP Response error")
