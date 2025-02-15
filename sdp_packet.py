@@ -147,7 +147,7 @@ SERVICE_ATTRIBUTE_ID = {
 	},
 }
 
-
+# helper functions to save the parameter as a dictionary and allow the rebuilding of the packet from the dictionary
 def build_packet_from_param_dict(param_dict=None):
 	if param_dict is None:
 		return None
@@ -186,11 +186,13 @@ def build_parameter_dictionary(pdu_id=0x00, current_tranid=0x0001, service_handl
 	param_dict["continuation_state"]=continuation_state
 	param_dict["garbage_value"]=garbage_value
 	return param_dict
+
 # helper function to build prot descriptor header
 # idea is to have a unified area to build in case protocol spec changes 
 def build_prot_descriptor_header(type_code, size_code):
 	return type_code << 3 | size_code
 
+# helper function to build the attribute ids or uuid data sequences
 def build_attr_id_struct(attr_id, isRange=False):
 	print(f"Attr Id: {attr_id}")
 	attr_type_code = TYPE_DESCRIPTOR_CODE["Unsigned Integer"]
@@ -228,6 +230,142 @@ def build_uuid_struct(uuid_str):
 	uuid_struct = struct.pack("B", elem_type) + value
 	return uuid_struct
 
+def build_attribute_list_pattern(attribute_list=[{"attribute_id":0x0001, "isRange":False}]):
+	data_seq_type_code = TYPE_DESCRIPTOR_CODE["Data Element Sequence"]
+	data_seq_size_code = SIZE_DESCRIPTOR_CODE["Data_Size_Additional_8_bits"]
+	data_seq_header = struct.pack("B",build_prot_descriptor_header(data_seq_type_code, data_seq_size_code))
+	data_elements = []
+	for attr_id in attribute_list:
+		if "attribute_id" in attr_id:
+			isRange = attr_id["isRange"] if "isRange" in attr_id else False
+			attr_struct = build_attr_id_struct(attr_id["attribute_id"], isRange)
+			data_elements.append(attr_struct)
+	elements_payload = b"".join(data_elements)
+	payload_len = len(elements_payload)
+	seq_header = data_seq_header + struct.pack(">B", payload_len)
+	attribute_pattern = seq_header + elements_payload
+	return attribute_pattern
+
+def build_sdp_search_pattern(uuid_list):
+	data_elements = []
+	data_seq_type_code = TYPE_DESCRIPTOR_CODE["Data Element Sequence"]
+	data_seq_size_code = SIZE_DESCRIPTOR_CODE["Data_Size_Additional_8_bits"]
+	data_seq_header = struct.pack("B",build_prot_descriptor_header(data_seq_type_code, data_seq_size_code))
+	
+	for uuid_str in uuid_list:
+		uuid_struct = build_uuid_struct(uuid_str)	   
+		data_elements.append(uuid_struct)
+		
+	# 2. Build Data Element Sequence
+	elements_payload = b"".join(data_elements)
+	payload_len = len(elements_payload)
+	#seq_len = len(elements_payload) + 3
+	seq_header = data_seq_header + struct.pack(">B", payload_len) 
+	service_search_pattern = seq_header + elements_payload
+	return service_search_pattern
+
+#helper functions to fuzz the packet
+def mutate_packet_for_fuzzing(packet):
+	choice = random.random()
+	strategy = ""
+	if choice < 0.7:  # Add garbage
+		strategy = "add_garbage"
+		new_packet = add_garbage_to_packet(packet)
+	elif choice < 0.9:  # modify length
+		strategy = "mod_length"
+		new_packet = modify_param_length_in_packet(packet)
+	else: # flip bits
+		strategy = "flip_bit"
+		new_packet = flip_bits_in_packet(packet)
+	return new_packet
+
+def generate_garbage():
+	rand_bit = randrange(0, 4)
+	garbage_value = b""
+	rand_garbage = 0x00
+	if rand_bit == 0:
+		rand_garbage = randrange(0x00, 0x100)
+		garbage_value = struct.pack(">B", rand_garbage)
+	elif rand_bit == 1:
+		rand_garbage = randrange(0x0000, 0x10000)
+		garbage_value = struct.pack(">H", rand_garbage)
+	elif rand_bit == 2:
+		rand_garbage = randrange(0x00000000, 0x100000000)
+		garbage_value = struct.pack(">I", rand_garbage)
+	else:
+		rand_garbage = randrange(0x0000000000000000, 0x10000000000000000)
+		garbage_value = struct.pack(">Q", rand_garbage)
+	return garbage_value
+
+# Strategy 1: append garbage to packet
+def add_garbage_to_packet(packet):
+	packet_header_wo_length = packet[0:3]
+	packet_tail_wo_length = packet[5:]
+	garbage_value = generate_garbage()
+
+	new_length = len(packet_tail_wo_length) + len(garbage_value)
+	new_packet = packet_header_wo_length + struct.pack(">H", new_length) + packet_tail_wo_length + garbage_value
+	return new_packet
+
+# Strategy 2: modify parameter length
+def modify_param_length_in_packet(packet):
+	packet_header_wo_length = packet[0:3]
+	packet_tail_wo_length = packet[5:]
+	param_len = len(packet_tail_wo_length)
+	rand_modifier = randrange(-2, 3) #range from -2 to 2. Can be more aggressive, let's see how to go about it
+	param_len += rand_modifier
+	new_packet = packet_header_wo_length + struct.pack(">H", param_len) + packet_tail_wo_length
+	return new_packet
+
+
+# Strategy 3: bit flipping. More aggressive and more chances of getting SDP Error responses
+# default to 5% of bit flipping
+def flip_bits_in_packet(packet, mutation_rate=0.05): 
+	packet_bytes = bytearray(packet)
+	for i in range(5, len(packet_bytes)): # we start from index 5 as we do not want to touch the PDU_id, tran id and length
+		if random.random() < mutation_rate:
+			# Choose a random bit (0-7) to flip in this byte.
+			bit_to_flip = 1 << random.randint(0, 7)
+			packet_bytes[i] ^= bit_to_flip
+	return bytes(packet_bytes)
+	
+
+def build_sdp_search_request(tid=0x0001, max_record=10, uuid_list=[ASSIGNED_SERVICE_UUID["Service Discovery Server"]], continuation_state=b'\x00', to_fuzz = False):	
+	service_search_pattern = build_sdp_search_pattern(uuid_list)
+
+	pdu_header = struct.pack(">BHH", 
+						   0x02,  # PDU ID
+						   tid,  # Transaction ID
+						   len(service_search_pattern) + 3) 
+	
+	max_records = struct.pack(">H", max_record) 
+	continuation = continuation_state 
+	parameter_dict = build_parameter_dictionary(pdu_id=0x02, current_tranid=
+                                           	tid,service_uuids=uuid_list, 
+                                            max_records=max_record, 
+                                            continuation_state=continuation_state)
+	packet = pdu_header + service_search_pattern + max_records + continuation
+	return parameter_dict, packet
+
+def build_sdp_service_attr_request(tid=0x0001, service_record_handle=0x0001, max_attr_byte_count=0x0007, attribute_list=[{"attribute_id":0x0001, "isRange":False}],continuation_state=b'\x00'):
+	attribute_pattern = build_attribute_list_pattern(attribute_list)
+	
+	pdu_header = struct.pack(">BHHIH",
+							 0x04,
+							 tid,
+							 len(attribute_pattern) + 7,
+							 service_record_handle,
+							 max_attr_byte_count)
+	continuation = continuation_state
+	parameter_dict = build_parameter_dictionary(pdu_id=0x04, 
+                                             current_tranid=tid, 
+                                             service_handle=service_record_handle,
+                                             attribute_ids=attribute_list,
+                                             max_attr_byte_counts=max_attr_byte_count,
+                                             continuation_state=continuation_state)
+	
+	return parameter_dict, pdu_header + attribute_pattern + continuation
+
 def build_sdp_service_search_attr_request(tid=0x0001, uuid_list=[ASSIGNED_SERVICE_UUID["Service Discovery Server"]],max_attr_byte_count=0x0007, attribute_list=[{"attribute_id":0x0001, "isRange":False}], continuation_state=b'\x00' ):
 	#1) build search pattern first
 	service_search_pattern = build_sdp_search_pattern(uuid_list)
@@ -257,80 +395,6 @@ def build_sdp_service_search_attr_request(tid=0x0001, uuid_list=[ASSIGNED_SERVIC
                                              continuation_state=continuation_state)
 	return parameter_dict, pdu_header + service_search_pattern + max_attr_byte_count_pattern + attribute_pattern + continuation
  
-	
-
-def build_attribute_list_pattern(attribute_list=[{"attribute_id":0x0001, "isRange":False}]):
-	data_seq_type_code = TYPE_DESCRIPTOR_CODE["Data Element Sequence"]
-	data_seq_size_code = SIZE_DESCRIPTOR_CODE["Data_Size_Additional_8_bits"]
-	data_seq_header = struct.pack("B",build_prot_descriptor_header(data_seq_type_code, data_seq_size_code))
-	data_elements = []
-	for attr_id in attribute_list:
-		if "attribute_id" in attr_id:
-			isRange = attr_id["isRange"] if "isRange" in attr_id else False
-			attr_struct = build_attr_id_struct(attr_id["attribute_id"], isRange)
-			data_elements.append(attr_struct)
-	elements_payload = b"".join(data_elements)
-	payload_len = len(elements_payload)
-	seq_header = data_seq_header + struct.pack(">B", payload_len)
-	attribute_pattern = seq_header + elements_payload
-	return attribute_pattern
-
-def build_sdp_service_attr_request(tid=0x0001, service_record_handle=0x0001, max_attr_byte_count=0x0007, attribute_list=[{"attribute_id":0x0001, "isRange":False}],continuation_state=b'\x00'):
-	attribute_pattern = build_attribute_list_pattern(attribute_list)
-	
-	pdu_header = struct.pack(">BHHIH",
-							 0x04,
-							 tid,
-							 len(attribute_pattern) + 7,
-							 service_record_handle,
-							 max_attr_byte_count)
-	continuation = continuation_state
-	parameter_dict = build_parameter_dictionary(pdu_id=0x04, 
-                                             current_tranid=tid, 
-                                             service_handle=service_record_handle,
-                                             attribute_ids=attribute_list,
-                                             max_attr_byte_counts=max_attr_byte_count,
-                                             continuation_state=continuation_state)
-	
-	return parameter_dict, pdu_header + attribute_pattern + continuation
-
-def build_sdp_search_pattern(uuid_list):
-	data_elements = []
-	data_seq_type_code = TYPE_DESCRIPTOR_CODE["Data Element Sequence"]
-	data_seq_size_code = SIZE_DESCRIPTOR_CODE["Data_Size_Additional_8_bits"]
-	data_seq_header = struct.pack("B",build_prot_descriptor_header(data_seq_type_code, data_seq_size_code))
-	
-	for uuid_str in uuid_list:
-		uuid_struct = build_uuid_struct(uuid_str)	   
-		data_elements.append(uuid_struct)
-		
-	# 2. Build Data Element Sequence
-	elements_payload = b"".join(data_elements)
-	payload_len = len(elements_payload)
-	#seq_len = len(elements_payload) + 3
-	seq_header = data_seq_header + struct.pack(">B", payload_len) 
-	service_search_pattern = seq_header + elements_payload
-	return service_search_pattern
-
-def build_sdp_search_request(tid=0x0001, max_record=10, uuid_list=[ASSIGNED_SERVICE_UUID["Service Discovery Server"]], continuation_state=b'\x00'):
-	# 1. Build Data Elements
-	
-	service_search_pattern = build_sdp_search_pattern(uuid_list)
-
-	# 3. Build SDP Request
-	pdu_header = struct.pack(">BHH", 
-						   0x02,  # PDU ID
-						   tid,  # Transaction ID
-						   len(service_search_pattern) + 3)  # plen
-	
-	max_records = struct.pack(">H", max_record)  # Max service records
-	continuation = b"\x00"  # No continuation state
-	parameter_dict = build_parameter_dictionary(pdu_id=0x02, current_tranid=
-                                           	tid,service_uuids=uuid_list, 
-                                            max_records=max_record, 
-                                            continuation_state=continuation_state)
-	return parameter_dict, pdu_header + service_search_pattern + max_records + continuation
-
 
 def parse_sdp_response(response):
 	# Basic response parsing

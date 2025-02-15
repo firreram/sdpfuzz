@@ -65,7 +65,7 @@ def sdp_fuzzing(bt_addr, test_info):
 		try:
 			service_uuids = [ASSIGNED_SERVICE_UUID["Public Browse Group"]]
 			#sdp_packet = build_sdp_search_request(current_tranid, 0xFFFF, service_uuids)
-			sdp_packet = build_sdp_service_search_attr_request(current_tranid, service_uuids, 0xFFFF, [{"attribute_id":(0x0001 << 16) | 0xFFFF, "isRange": True}])
+			param_dict = sdp_packet = build_sdp_service_search_attr_request(current_tranid, service_uuids, 0xFFFF, [{"attribute_id":(0x0001 << 16) | 0xFFFF, "isRange": True}])
 			current_tranid += 1
 			# print("Crafted packet bytes:", sdp_packet.hex())
 			# print("Breakdown:")
@@ -79,6 +79,7 @@ def sdp_fuzzing(bt_addr, test_info):
 
 			sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
 			sock, packet_info = send_sdp_packet(bt_addr, sock, sdp_packet, 0x02, True)
+			packet_info["params"] = param_dict
 			if packet_info != "":
 				logger["packet"].append(packet_info)
    
@@ -100,13 +101,15 @@ def sdp_fuzzing(bt_addr, test_info):
 			print("[+] Save logfile")
 			logger["end_time"] = str(datetime.now())
 			logger["count"] = {"all" : packet_count, "crash" : crash_count, "passed" : packet_count-crash_count}
-			json.dump(logger, f, indent="\t")
+			#json.dump(logger, f, indent="\t")
 
 		except KeyboardInterrupt as k:
 			print("[!] Fuzzing Stopped :", k)
 			print("[+] Save logfile")
 			logger["end_time"] = str(datetime.now())
 			logger["count"] = {"all" : packet_count, "crash" : crash_count, "passed" : packet_count-crash_count}
+			#json.dump(logger, f, indent="\t")
+		finally:
 			json.dump(logger, f, indent="\t")
 			
 	
