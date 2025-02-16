@@ -1,11 +1,14 @@
-# L2Fuzz
+# L2Fuzz + SDPFuzz
 
 A stateful fuzzer to detect vulnerabilities in Bluetooth BR/EDR Logical Link Control and Adaptation Protocol (L2CAP) layer.
 
+SDPFuzz is an extension that builds on top of L2Fuzz to detect vulnerabilites in Service Discovery Protocol
 
 ## Prerequisites
 
 L2Fuzz uses python3.6.9 and scapy 2.4.4. Also, it uses Bluetooth Dongle.
+
+SDPFuzz is tested on Kali 2024.4 and Ubuntu 24.04. The Bluetooth Dongle used is a TP-Link Bluetooth dongle.
 
 ```
 sudo apt-get install python3-pip
@@ -19,9 +22,10 @@ pip3 install ouilookup
 ## Running the tests
 
 1. move to L2Fuzz folder.
-2. run l2fuzz.py .
+2. run the following command to update and run the latest scripts
 ```
-sudo python3 l2fuzz.py
+sudo chmod +x run.sh
+./run.sh
 ```
 3. Choose target device.
 ```

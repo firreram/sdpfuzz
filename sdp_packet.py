@@ -203,26 +203,21 @@ def build_attr_id_struct(attr_id, isRange=False):
 	return attr_struct
 
 def build_uuid_struct(uuid_str):
-	print(f"UUID: {uuid_str}")
 	uuid_type_code = TYPE_DESCRIPTOR_CODE["UUID"]
 	uuid_size_code = SIZE_DESCRIPTOR_CODE["2Bytes"]
+	#print(f"Processing UUID: {uuid_str}")
 	uuid_obj = uuid.UUID(uuid_str)
-	print(f"UUID obj: {uuid_obj}")
 	# Determine UUID type and size
 	if uuid_obj.version == 4:  # 128-bit UUID
-		print("UUID is 128bits")
 		uuid_size_code = SIZE_DESCRIPTOR_CODE["16Bytes"]
 		elem_type = build_prot_descriptor_header(uuid_type_code, uuid_size_code)
 		value = uuid_obj.bytes
 	else:  # 16/32-bit UUID
-		print("UUID is not 128 bits")
 		short_uuid = uuid_obj.int >> 96
 		if short_uuid <= 0xFFFF:
-			print("16 bits")
 			elem_type = build_prot_descriptor_header(uuid_type_code, uuid_size_code)
 			value = struct.pack(">H", short_uuid)
 		else:
-			print("32 bits")
 			uuid_size_code = SIZE_DESCRIPTOR_CODE["4Bytes"]
 			elem_type = build_prot_descriptor_header(uuid_type_code, uuid_size_code)
 			value = struct.pack(">I", short_uuid)
@@ -265,19 +260,53 @@ def build_sdp_search_pattern(uuid_list):
 	return service_search_pattern
 
 #helper functions to fuzz the packet
+
+
+
+def generate_uuid_list():
+	list_range = randrange(0, 15)
+	uuid_list = []
+	if list_range > 0:
+		for i in range(0, list_range):
+			my_choice = random()
+			if my_choice < 0.7: #use uuid from assigned list
+				rand_key = choice(list(ASSIGNED_SERVICE_UUID.keys()))
+				uuid_list.append(ASSIGNED_SERVICE_UUID[rand_key])
+			else: #random uuid
+				random_uuid = uuid.uuid4()
+				if my_choice < 0.9: #add base
+					# random_part = random_uuid.hex[:20]
+					# custom_uuid = f"{random_part[:8]}-{random_part[8:12]}-{random_part[12:16]}-1000-8000-00805f9b34fb"
+					uuid_list.append(str(random_uuid))
+				else:
+					uuid_list.append(str(random_uuid))
+	
+	return uuid_list
+	
+def generate_sdp_service_search_packet_for_fuzzing(current_tranid):
+	uuid_list = generate_uuid_list()
+	strategy = "sdp_service_search_empty_list" if len(uuid_list) == 0 else ("sdp_service_search_overload_list" if len(uuid_list) > 12 else "")
+	param_dict, packet = build_sdp_search_request(tid=current_tranid,
+                                               		max_record=0xFFFF,
+                                                 	uuid_list=uuid_list
+                                                  	)
+	if len(strategy) == 0: #no strategy yet
+		strategy, packet = mutate_packet_for_fuzzing(packet)
+	return param_dict, strategy, packet
+	
 def mutate_packet_for_fuzzing(packet):
-	choice = random.random()
+	my_choice = random()
 	strategy = ""
-	if choice < 0.7:  # Add garbage
+	if my_choice < 0.7:  # Add garbage
 		strategy = "add_garbage"
 		new_packet = add_garbage_to_packet(packet)
-	elif choice < 0.9:  # modify length
+	elif my_choice < 0.9:  # modify length
 		strategy = "mod_length"
 		new_packet = modify_param_length_in_packet(packet)
 	else: # flip bits
 		strategy = "flip_bit"
 		new_packet = flip_bits_in_packet(packet)
-	return new_packet
+	return strategy, new_packet
 
 def generate_garbage():
 	rand_bit = randrange(0, 4)
@@ -323,14 +352,14 @@ def modify_param_length_in_packet(packet):
 def flip_bits_in_packet(packet, mutation_rate=0.05): 
 	packet_bytes = bytearray(packet)
 	for i in range(5, len(packet_bytes)): # we start from index 5 as we do not want to touch the PDU_id, tran id and length
-		if random.random() < mutation_rate:
+		if random() < mutation_rate:
 			# Choose a random bit (0-7) to flip in this byte.
-			bit_to_flip = 1 << random.randint(0, 7)
+			bit_to_flip = 1 << randint(0, 7)
 			packet_bytes[i] ^= bit_to_flip
 	return bytes(packet_bytes)
 	
 
-def build_sdp_search_request(tid=0x0001, max_record=10, uuid_list=[ASSIGNED_SERVICE_UUID["Service Discovery Server"]], continuation_state=b'\x00', to_fuzz = False):	
+def build_sdp_search_request(tid=0x0001, max_record=10, uuid_list=[ASSIGNED_SERVICE_UUID["Service Discovery Server"]], continuation_state=b'\x00'):	
 	service_search_pattern = build_sdp_search_pattern(uuid_list)
 
 	pdu_header = struct.pack(">BHH", 
