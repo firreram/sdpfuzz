@@ -13,7 +13,7 @@ import traceback
 current_tranid = 0x0001
 packet_count = 0
 crash_count = 0
-fuzz_iteration = 2500
+fuzz_iteration = 10
 '''
 		packet_info["no"] = pkt_cnt
 		packet_info["protocol"] = "L2CAP"
@@ -34,12 +34,12 @@ def send_sdp_packet(bt_addr, sock, packet, packet_type, process_resp=False):
 		packet_info["protocol"] = "SDP"
 		packet_info["sent_time"] = str(datetime.now())
 		packet_info["packet_type"] = packet_type
-		packet_info["raw_packet"] = packet
+		packet_info["raw_packet"] = packet.hex()
 		packet_info["crash"] = "n"
 		packet_info["sended?"] = "n"	
 		if process_resp:
 			response = sock.recv(4096)
-			packet_info["response_data"] = response
+			packet_info["response_data"] = response.hex()
 	except ConnectionResetError:
 		print("[-] Crash Found - ConnectionResetError detected")
 		if(l2ping(bt_addr) == False):
@@ -50,7 +50,7 @@ def send_sdp_packet(bt_addr, sock, packet, packet_type, process_resp=False):
 			packet_info["protocol"] = "SDP"
 			packet_info["sent_time"] = str(datetime.now())
 			packet_info["packet_type"] = packet_type
-			packet_info["raw_packet"] = packet
+			packet_info["raw_packet"] = packet.hex()
 			packet_info["sended?"] = "n"			
 			packet_info["crash"] = "y"
 			packet_info["crash_info"] = "ConnectionResetError"
@@ -65,7 +65,7 @@ def send_sdp_packet(bt_addr, sock, packet, packet_type, process_resp=False):
 			packet_info["protocol"] = "SDP"
 			packet_info["sent_time"] = str(datetime.now())
 			packet_info["packet_type"] = packet_type
-			packet_info["raw_packet"] = packet
+			packet_info["raw_packet"] = packet.hex()
 			packet_info["sended?"] = "n"			
 			packet_info["crash"] = "y"
 			packet_info["crash_info"] = "ConnectionRefusedError"
@@ -80,7 +80,7 @@ def send_sdp_packet(bt_addr, sock, packet, packet_type, process_resp=False):
 			packet_info["protocol"] = "SDP"
 			packet_info["sent_time"] = str(datetime.now())
 			packet_info["packet_type"] = packet_type
-			packet_info["raw_packet"] = packet
+			packet_info["raw_packet"] = packet.hex()
 			packet_info["sended?"] = "n"			
 			packet_info["crash"] = "y"
 			packet_info["crash_info"] = "ConnectionAbortedError"		
@@ -95,7 +95,7 @@ def send_sdp_packet(bt_addr, sock, packet, packet_type, process_resp=False):
 		packet_info["protocol"] = "SDP"
 		packet_info["sent_time"] = str(datetime.now())
 		packet_info["packet_type"] = packet_type
-		packet_info["raw_packet"] = packet
+		packet_info["raw_packet"] = packet.hex()
 		packet_info["sended?"] = "n"			
 		packet_info["crash"] = "y"
 		packet_info["crash_info"] = "TimeoutError"
@@ -114,7 +114,7 @@ def send_sdp_packet(bt_addr, sock, packet, packet_type, process_resp=False):
 			packet_info["protocol"] = "SDP"
 			packet_info["sent_time"] = str(datetime.now())
 			packet_info["packet_type"] = packet_type
-			packet_info["raw_packet"] = packet
+			packet_info["raw_packet"] = packet.hex()
 			packet_info["sended?"] = "n"			
 			packet_info["crash"] = "y"
 			packet_info["DoS"] = "y"
@@ -132,7 +132,7 @@ def send_sdp_packet(bt_addr, sock, packet, packet_type, process_resp=False):
      
 '''
 
-def send_test_packet(logger):
+def send_test_packet(bt_addr,logger):
 	global current_tranid
 	service_uuids = [ASSIGNED_SERVICE_UUID["Public Browse Group"]]
 	#sdp_packet = build_sdp_search_request(current_tranid, 0xFFFF, service_uuids)
@@ -174,7 +174,7 @@ def fuzz_sdp_service_search(bt_addr, sock, logger):
 	for i in range(0, fuzz_iteration):
 		current_tranid = (current_tranid + 1) % 0x10000
 		param_dict, strategy, packet = generate_sdp_service_search_packet_for_fuzzing(current_tranid=current_tranid)
-		sock, packet_info = send_sdp_packet(bt_addr=bt_addr, sock=sock, packet=packet, packet_type=0x02)
+		sock, packet_info = send_sdp_packet(bt_addr=bt_addr, sock=sock, packet=packet, packet_type=0x02, process_resp=True)
 		if packet_info != "":
 			packet_info["param_dict"] = param_dict
 			packet_info["strategy"] = strategy
@@ -190,12 +190,12 @@ def sdp_fuzzing(bt_addr, test_info):
 		logger["packet"] = []
 		print("Start Fuzzing... Please hit Ctrl + C to finish...")
 		try:
-			while (1):
-				print("[+] Tested %d packets" % (packet_count))	
-				if(len(logger['packet']) > 200000):
-					del logger['packet'][:100000]
-				sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
-				fuzz_sdp_service_search(bt_addr=bt_addr, sock=sock, logger=logger)
+			#while (1):
+			print("[+] Tested %d packets" % (packet_count))	
+			if(len(logger['packet']) > 200000):
+				del logger['packet'][:100000]
+			sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
+			fuzz_sdp_service_search(bt_addr=bt_addr, sock=sock, logger=logger)
 				
 		except Exception as e:
 			print("[!] Error Message :", e)

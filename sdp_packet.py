@@ -183,8 +183,8 @@ def build_parameter_dictionary(pdu_id=0x00, current_tranid=0x0001, service_handl
 	param_dict["attribute_ids"]=attribute_ids
 	param_dict["max_records"]=max_records
 	param_dict["max_attr_byte_count"]=max_attr_byte_counts
-	param_dict["continuation_state"]=continuation_state
-	param_dict["garbage_value"]=garbage_value
+	param_dict["continuation_state"]=continuation_state.hex()
+	param_dict["garbage_value"]=garbage_value.hex()
 	return param_dict
 
 # helper function to build prot descriptor header
@@ -261,7 +261,14 @@ def build_sdp_search_pattern(uuid_list):
 
 #helper functions to fuzz the packet
 
+def generate_fixed_uuid_list():
+	uuid_list = []
+	assigned_uuid_list_keys = list(ASSIGNED_SERVICE_UUID.keys())
+	randomized_list_keys = sample(assigned_uuid_list_keys, 12)
+	for key in randomized_list_keys:
+		uuid_list.append(ASSIGNED_SERVICE_UUID[key])
 
+	return uuid_list
 
 def generate_uuid_list():
 	list_range = randrange(0, 15)
@@ -284,29 +291,31 @@ def generate_uuid_list():
 	return uuid_list
 	
 def generate_sdp_service_search_packet_for_fuzzing(current_tranid):
-	uuid_list = generate_uuid_list()
+	uuid_list = generate_fixed_uuid_list()
 	strategy = "sdp_service_search_empty_list" if len(uuid_list) == 0 else ("sdp_service_search_overload_list" if len(uuid_list) > 12 else "")
 	param_dict, packet = build_sdp_search_request(tid=current_tranid,
                                                		max_record=0xFFFF,
                                                  	uuid_list=uuid_list
                                                   	)
 	if len(strategy) == 0: #no strategy yet
-		strategy, packet = mutate_packet_for_fuzzing(packet)
+		strategy, garbage_value, packet = mutate_packet_for_fuzzing(packet)
+		param_dict["garbage_value"] = garbage_value.hex()
 	return param_dict, strategy, packet
 	
 def mutate_packet_for_fuzzing(packet):
 	my_choice = random()
 	strategy = ""
-	if my_choice < 0.7:  # Add garbage
+	garbage_value = b'\x00'
+	if my_choice < 0.8:  # Add garbage
 		strategy = "add_garbage"
-		new_packet = add_garbage_to_packet(packet)
-	elif my_choice < 0.9:  # modify length
-		strategy = "mod_length"
-		new_packet = modify_param_length_in_packet(packet)
+		garbage_value, new_packet = add_garbage_to_packet(packet)
+	# elif my_choice < 0.9:  # modify length
+	# 	strategy = "mod_length"
+	# 	new_packet = modify_param_length_in_packet(packet)
 	else: # flip bits
 		strategy = "flip_bit"
 		new_packet = flip_bits_in_packet(packet)
-	return strategy, new_packet
+	return strategy, garbage_value, new_packet
 
 def generate_garbage():
 	rand_bit = randrange(0, 4)
@@ -334,7 +343,7 @@ def add_garbage_to_packet(packet):
 
 	new_length = len(packet_tail_wo_length) + len(garbage_value)
 	new_packet = packet_header_wo_length + struct.pack(">H", new_length) + packet_tail_wo_length + garbage_value
-	return new_packet
+	return garbage_value, new_packet
 
 # Strategy 2: modify parameter length
 def modify_param_length_in_packet(packet):
