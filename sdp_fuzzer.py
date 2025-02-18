@@ -136,7 +136,7 @@ def send_test_packet(bt_addr,logger):
 	global current_tranid
 	service_uuids = [ASSIGNED_SERVICE_UUID["Public Browse Group"]]
 	#sdp_packet = build_sdp_search_request(current_tranid, 0xFFFF, service_uuids)
-	param_dict = sdp_packet = build_sdp_service_search_attr_request(current_tranid, service_uuids, 0xFFFF, [{"attribute_id":(0x0001 << 16) | 0xFFFF, "isRange": True}])
+	param_dict, sdp_packet = build_sdp_service_search_attr_request(current_tranid, service_uuids, 0xFFFF, [{"attribute_id":(0x0001 << 16) | 0xFFFF, "isRange": True}])
 	current_tranid += 1
 	# print("Crafted packet bytes:", sdp_packet.hex())
 	# print("Breakdown:")
@@ -155,18 +155,14 @@ def send_test_packet(bt_addr,logger):
 		logger["packet"].append(packet_info)
 
 
-	print(f"\n[+] Received SDP response: {packet_info["response_data"]}")	 
 	resp_data = parse_sdp_response(packet_info["response_data"])
-	# if resp_data["handle_list"] is not None:
-	# 	if len(resp_data["handle_list"]) > 0:
-	# 		first_handle = resp_data["handle_list"][0]
-	# 		attr_range = (0x0001 << 16) | 0xFFFF
-	# 		sdp_packet2 = build_sdp_service_attr_request_by_ranges(current_tranid,first_handle,0xFFFF,[{"attribute_id": attr_range, "isRange": True}])
-	# 		sock, packet_info = send_sdp_packet(bt_addr, sock, sdp_packet2, 0x04, True)
-	# 		if packet_info != "":
-	# 			logger["packet"].append(packet_info)
-	# 		#print(packet_info["response_data"])
-	print(f"{logger}")
+	if resp_data["continuation_state"] != b"\x00":
+		print(f"Continuation state: {resp_data["continuation_state"]}")
+		param_dict, sdp_packet = build_sdp_service_search_attr_request(current_tranid, service_uuids, 0xFFFF, [{"attribute_id":(0x0001 << 16) | 0xFFFF, "isRange": True}], resp_data["continuation_state"])
+		sock, packet_info = send_sdp_packet(bt_addr, sock, sdp_packet, 0x02, True)
+		packet_info["params"] = param_dict
+		if packet_info != "":
+			logger["packet"].append(packet_info)
 
 def fuzz_sdp_service_search(bt_addr, sock, logger):
 	global fuzz_iteration
@@ -191,11 +187,12 @@ def sdp_fuzzing(bt_addr, test_info):
 		print("Start Fuzzing... Please hit Ctrl + C to finish...")
 		try:
 			#while (1):
-			print("[+] Tested %d packets" % (packet_count))	
-			if(len(logger['packet']) > 200000):
-				del logger['packet'][:100000]
-			sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
-			fuzz_sdp_service_search(bt_addr=bt_addr, sock=sock, logger=logger)
+			# print("[+] Tested %d packets" % (packet_count))	
+			# if(len(logger['packet']) > 200000):
+			# 	del logger['packet'][:100000]
+			# sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
+			# fuzz_sdp_service_search(bt_addr=bt_addr, sock=sock, logger=logger)
+			send_test_packet(logger)
 				
 		except Exception as e:
 			print("[!] Error Message :", e)

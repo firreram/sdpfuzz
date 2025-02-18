@@ -261,6 +261,39 @@ def build_sdp_search_pattern(uuid_list):
 
 #helper functions to fuzz the packet
 
+def generate_fixed_attribute_list1():
+	attr_list = []
+	min_attr_id = 0x0000
+	max_attr_id = 0xFFFF	
+	current_attr_id = min_attr_id
+	attr_dict = {"attribute_id": min_attr_id, "isRange": False}
+	attr_list.append(attr_dict)
+	attr_dict = {"attribute_id": ((min_attr_id+1)<<16) | (max_attr_id-1), "isRange": True}
+	attr_list.append(attr_dict)
+	attr_dict = {"attribute_id": max_attr_id, "isRange": False}
+	attr_list.append(attr_dict)
+	return attr_list
+
+def generate_attribute_list():
+	min_attr_id = 0x0000
+	max_attr_id = 0xFFFF
+	attr_list = []
+	current_attr_id = min_attr_id
+	while current_attr_id <= max_attr_id:
+		choice1 = random()
+		if choice1 < 0.5 or current_attr_id == max_attr_id:
+			attr_dict = {"attribute_id": current_attr_id, "isRange": False}
+			attr_list.append(attr_dict)
+			current_attr_id += 1
+		else:
+			upper_limit = randrange(current_attr_id+1, max_attr_id)
+			upper_limit = max(upper_limit, max_attr_id)
+			attribute_range = (current_attr_id << 16) | upper_limit
+			attr_dict = {"attribute_id": attribute_range, "isRange": True}
+			attr_list.append(attr_dict)
+			current_attr_id += 1
+	return attr_list
+
 def generate_fixed_uuid_list():
 	uuid_list = []
 	assigned_uuid_list_keys = list(ASSIGNED_SERVICE_UUID.keys())
@@ -433,6 +466,48 @@ def build_sdp_service_search_attr_request(tid=0x0001, uuid_list=[ASSIGNED_SERVIC
                                              continuation_state=continuation_state)
 	return parameter_dict, pdu_header + service_search_pattern + max_attr_byte_count_pattern + attribute_pattern + continuation
  
+# parse response packets
+# service search response - need to get the handle list if we want to follow up on the service attr req
+def parse_sdp_service_search_response(response):
+	ret_data = {
+		"handle_list": None,
+		"attribute_list": None
+	}
+	tid = struct.unpack(">H", response[1:3])[0]
+	total_records = struct.unpack(">H", response[5:7])[0]
+	current_records = struct.unpack(">H", response[7:9])[0]
+	# Parse handle list
+	handle_data = response[9:]  # Skip continuation state
+	print(f"Handle data: {handle_data}")
+	start_index = 0
+	next_index = 0
+	handle_list = []
+	for curr_index in range(current_records):
+		start_index = curr_index * 4
+		next_index = start_index + 4
+		handle_raw = handle_data[start_index:next_index]
+		print(f"Handle raw:{handle_raw}")
+		handle_id = struct.unpack(">I", handle_raw)
+		handle_list.append(handle_id[0])
+		print(f"Handle record {curr_index+1}: {handle_id[0]:08x}")
+	continuation_state = handle_data[next_index:]
+	ret_data["handle_list"] = handle_list
+	ret_data["continuation_state"] = continuation_state
+	return ret_data
+
+# service attr response - by right we do not need to parse the attribute list, but we still want to get the continuation state to see if we want to continue sending the req
+def parse_sdp_service_attribute_response(response):
+	ret_data = {
+		"handle_list": None,
+		"attribute_list": None
+	}
+	tid = struct.unpack(">H", response[1:3])[0]
+	plen = struct.unpack(">H", response[3:5])[0]
+	attr_byte_count = struct.unpack(">H", response[5:7])[0]
+	continuation_state = response[7+attr_byte_count:]
+	ret_data["continuation_state"] = continuation_state
+	return ret_data
+	
 
 def parse_sdp_response(response):
 	# Basic response parsing
@@ -443,43 +518,19 @@ def parse_sdp_response(response):
 	try:
 		pdu_id = response[0]
 		if pdu_id == 0x03:
-			tid = struct.unpack(">H", response[1:3])[0]
-			plen = struct.unpack(">H", response[3:5])[0]
-			total_records = struct.unpack(">H", response[5:7])[0]
-			current_records = struct.unpack(">H", response[7:9])[0]
-			
-			print(f"SDP Response (TID: {tid:04x})")
-			print(f"Total Records: {total_records}")
-			print(f"Current Records: {current_records}")
-			
-			# Parse handle list
-			handle_data = response[9:]  # Skip continuation state
-			print(f"Handle data: {handle_data}")
-			start_index = 0
-			next_index = 0
-			handle_list = []
-			for curr_index in range(current_records):
-				start_index = curr_index * 4
-				next_index = start_index + 4
-				handle_raw = handle_data[start_index:next_index]
-				print(f"Handle raw:{handle_raw}")
-				handle_id = struct.unpack(">I", handle_raw)
-				handle_list.append(handle_id[0])
-				print(f"Handle record {curr_index+1}: {handle_id[0]:08x}")
-			continuation_state = handle_data[next_index:]
-			ret_data["handle_list"] = handle_list
-			print(f"Continuation state: {continuation_state}")
-			pass
+			ret_data = parse_sdp_service_search_response(response)
 		elif pdu_id == 0x05:
 			print("Service attribute response")
+			ret_data = parse_sdp_service_attribute_response(response)
 			pass
 		elif pdu_id == 0x07:
 			print("Service search attribute response")
+			ret_data = parse_sdp_service_attribute_response(response)
 			pass
 		else: #SDP Response Error
 			print("SDP Response error")
 		
-	except Exception as e:
+	except Exception as e:	
 		print(f"Parse error: {str(e)}")
 	return ret_data
 		
