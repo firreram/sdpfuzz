@@ -13,6 +13,7 @@ import traceback
 current_tranid = 0x0001
 packet_count = 0
 crash_count = 0
+service_handle_list = []
 fuzz_iteration = 10
 '''
 		packet_info["no"] = pkt_cnt
@@ -27,7 +28,7 @@ def send_sdp_packet(bt_addr, sock, packet, packet_type, process_resp=False):
 	packet_count += 1
 	packet_info = ""
 	try:
-		sock.connect((bt_addr, 1))
+		#sock.connect((bt_addr, 1))
 		sock.send(packet)
 		packet_info = {}
 		packet_info["no"] = packet_count
@@ -37,6 +38,7 @@ def send_sdp_packet(bt_addr, sock, packet, packet_type, process_resp=False):
 		packet_info["raw_packet"] = packet.hex()
 		packet_info["crash"] = "n"
 		packet_info["sended?"] = "n"	
+		response = b'\x00'
 		if process_resp:
 			response = sock.recv(4096)
 			packet_info["response_data"] = response.hex()
@@ -123,8 +125,8 @@ def send_sdp_packet(bt_addr, sock, packet, packet_type, process_resp=False):
 		else:
 			pass
 	
-	sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
-	return sock, packet_info
+	#sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
+	return sock, packet_info, response
 
 '''
 				if(len(logger['packet']) > 200000):
@@ -149,20 +151,51 @@ def send_test_packet(bt_addr,logger):
 
 
 	sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
-	sock, packet_info = send_sdp_packet(bt_addr, sock, sdp_packet, 0x02, True)
-	packet_info["params"] = param_dict
+	sock.connect((bt_addr, 1))
+	sock, packet_info, response = send_sdp_packet(bt_addr, sock, sdp_packet, 0x02, True)
+	
 	if packet_info != "":
+		packet_info["params"] = param_dict
 		logger["packet"].append(packet_info)
 
 
-	resp_data = parse_sdp_response(packet_info["response_data"])
+
+	resp_data = parse_sdp_response(response)
 	if resp_data["continuation_state"] != b"\x00":
 		print(f"Continuation state: {resp_data["continuation_state"]}")
 		param_dict, sdp_packet = build_sdp_service_search_attr_request(current_tranid, service_uuids, 0xFFFF, [{"attribute_id":(0x0001 << 16) | 0xFFFF, "isRange": True}], resp_data["continuation_state"])
-		sock, packet_info = send_sdp_packet(bt_addr, sock, sdp_packet, 0x02, True)
-		packet_info["params"] = param_dict
+		sock, packet_info, response = send_sdp_packet(bt_addr, sock, sdp_packet, 0x02, True)
+		
 		if packet_info != "":
+			packet_info["param_dict"] = param_dict
 			logger["packet"].append(packet_info)
+
+
+def send_initial_sdp_service_search(bt_add, sock, logger):
+	global current_tranid
+	global service_handle_list
+	param_dict, packet = build_sdp_search_request(current_tranid, 0xFF, [ASSIGNED_SERVICE_UUID["Public Browse Group"]])
+	sock, packet_info, response = send_sdp_packet(bt_addr=bt_add, sock=sock, packet=packet, packet_type=0x02, process_resp=True)
+	if packet_info != "":
+		packet_info["params"] = param_dict
+		logger["packet"].append(packet_info)
+		if response != b'\x00':
+			resp = parse_sdp_response(response)
+			if resp["handle_list"] is not None:
+				service_handle_list = resp["handle_list"]
+	if len(service_handle_list) == 0: #in case no service handle
+		service_handle_list.append[b'\x1001']
+	print(f"Current service handle list: {service_handle_list}")
+
+	current_tranid = (current_tranid + 1) % 0x10000
+
+def fuzz_sdp_service_attr(bt_addr, sock, logger):
+	global current_tranid
+	global fuzz_iteration
+	global service_handle_list
+	
+	for i in range(0, fuzz_iteration):
+		service_handle = choice(service_handle_list)
 
 def fuzz_sdp_service_search(bt_addr, sock, logger):
 	global fuzz_iteration
@@ -170,7 +203,7 @@ def fuzz_sdp_service_search(bt_addr, sock, logger):
 	for i in range(0, fuzz_iteration):
 		current_tranid = (current_tranid + 1) % 0x10000
 		param_dict, strategy, packet = generate_sdp_service_search_packet_for_fuzzing(current_tranid=current_tranid)
-		sock, packet_info = send_sdp_packet(bt_addr=bt_addr, sock=sock, packet=packet, packet_type=0x02, process_resp=True)
+		sock, packet_info, response = send_sdp_packet(bt_addr=bt_addr, sock=sock, packet=packet, packet_type=0x02, process_resp=True)
 		if packet_info != "":
 			packet_info["param_dict"] = param_dict
 			packet_info["strategy"] = strategy
@@ -192,7 +225,7 @@ def sdp_fuzzing(bt_addr, test_info):
 			# 	del logger['packet'][:100000]
 			# sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
 			# fuzz_sdp_service_search(bt_addr=bt_addr, sock=sock, logger=logger)
-			send_test_packet(logger)
+			send_test_packet(bt_addr=bt_addr, logger=logger)
 				
 		except Exception as e:
 			print("[!] Error Message :", e)

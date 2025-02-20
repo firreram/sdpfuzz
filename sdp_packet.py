@@ -194,7 +194,7 @@ def build_prot_descriptor_header(type_code, size_code):
 
 # helper function to build the attribute ids or uuid data sequences
 def build_attr_id_struct(attr_id, isRange=False):
-	print(f"Attr Id: {attr_id}")
+	#print(f"Attr Id: {attr_id}")
 	attr_type_code = TYPE_DESCRIPTOR_CODE["Unsigned Integer"]
 	attr_size_code = SIZE_DESCRIPTOR_CODE["2Bytes"] if not isRange else SIZE_DESCRIPTOR_CODE["4Bytes"]
 	elem_type = build_prot_descriptor_header(attr_type_code, attr_size_code)
@@ -334,7 +334,19 @@ def generate_sdp_service_search_packet_for_fuzzing(current_tranid):
 		strategy, garbage_value, packet = mutate_packet_for_fuzzing(packet)
 		param_dict["garbage_value"] = garbage_value.hex()
 	return param_dict, strategy, packet
-	
+
+def generate_sdp_service_attr_packet_for_fuzzing(current_tranid, service_handle):
+	attr_list = generate_fixed_attribute_list1()
+	param_dict, packet = build_sdp_service_attr_request(tid=current_tranid, 
+                                                     	service_record_handle=service_handle,
+                                                      	max_attr_byte_count=0xFFFF,
+                                                       	attribute_list=attr_list)
+	strategy, garbage_value, packet = mutate_packet_for_fuzzing(packet)
+	return param_dict, strategy, packet
+
+
+
+
 def mutate_packet_for_fuzzing(packet):
 	my_choice = random()
 	strategy = ""
@@ -407,7 +419,7 @@ def build_sdp_search_request(tid=0x0001, max_record=10, uuid_list=[ASSIGNED_SERV
 	pdu_header = struct.pack(">BHH", 
 						   0x02,  # PDU ID
 						   tid,  # Transaction ID
-						   len(service_search_pattern) + 3) 
+						   len(service_search_pattern) + 2 + len(continuation_state)) 
 	
 	max_records = struct.pack(">H", max_record) 
 	continuation = continuation_state 
@@ -424,7 +436,7 @@ def build_sdp_service_attr_request(tid=0x0001, service_record_handle=0x0001, max
 	pdu_header = struct.pack(">BHHIH",
 							 0x04,
 							 tid,
-							 len(attribute_pattern) + 7,
+							 len(attribute_pattern) + 6 + len(continuation_state),
 							 service_record_handle,
 							 max_attr_byte_count)
 	continuation = continuation_state
@@ -445,7 +457,7 @@ def build_sdp_service_search_attr_request(tid=0x0001, uuid_list=[ASSIGNED_SERVIC
 	attribute_pattern = build_attribute_list_pattern(attribute_list)
  
 	#3) calculate length, should be len(ssp) + len(ap) + len(max_attr_count) + len(continuation_state)
-	pattern_length = len(service_search_pattern) + len(attribute_pattern) + 3
+	pattern_length = len(service_search_pattern) + len(attribute_pattern) + 2 + len(continuation_state)
 	
 	#4) Build the struct for max_attr_count first
 	max_attr_byte_count_pattern = struct.pack(">H", max_attr_byte_count)
@@ -486,10 +498,10 @@ def parse_sdp_service_search_response(response):
 		start_index = curr_index * 4
 		next_index = start_index + 4
 		handle_raw = handle_data[start_index:next_index]
-		print(f"Handle raw:{handle_raw}")
+		#print(f"Handle raw:{handle_raw}")
 		handle_id = struct.unpack(">I", handle_raw)
 		handle_list.append(handle_id[0])
-		print(f"Handle record {curr_index+1}: {handle_id[0]:08x}")
+		#print(f"Handle record {curr_index+1}: {handle_id[0]:08x}")
 	continuation_state = handle_data[next_index:]
 	ret_data["handle_list"] = handle_list
 	ret_data["continuation_state"] = continuation_state
@@ -517,8 +529,10 @@ def parse_sdp_response(response):
 	}
 	try:
 		pdu_id = response[0]
+		print(f"PDU ID of response: {pdu_id}")
 		if pdu_id == 0x03:
 			ret_data = parse_sdp_service_search_response(response)
+			pass
 		elif pdu_id == 0x05:
 			print("Service attribute response")
 			ret_data = parse_sdp_service_attribute_response(response)
