@@ -14,7 +14,7 @@ current_tranid = 0x0001
 packet_count = 0
 crash_count = 0
 service_handle_list = []
-fuzz_iteration = 10
+fuzz_iteration = 2500
 '''
 		packet_info["no"] = pkt_cnt
 		packet_info["protocol"] = "L2CAP"
@@ -236,7 +236,7 @@ def fuzz_sdp_service_search(bt_addr, sock, logger):
 	for i in range(0, fuzz_iteration):
 		current_tranid = (current_tranid + 1) % 0x10000
 		param_dict, strategy, packet = generate_sdp_service_search_packet_for_fuzzing(current_tranid=current_tranid)
-		sock, packet_info, response = send_sdp_packet(bt_addr=bt_addr, sock=sock, packet=packet, packet_type=0x02, process_resp=True)
+		sock, packet_info, response = send_sdp_packet(bt_addr=bt_addr, sock=sock, packet=packet, packet_type=0x02, process_resp=False)
 		if packet_info != "":
 			packet_info["param_dict"] = param_dict
 			packet_info["strategy"] = strategy
@@ -257,7 +257,8 @@ def sdp_fuzzing(bt_addr, test_info):
 				if(len(logger['packet']) > 200000):
 					del logger['packet'][:100000]
 				sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
-				send_initial_sdp_service_search(bt_add=bt_addr, sock=sock, logger=logger)
+				sock.connect((bt_addr, 1))
+				#send_initial_sdp_service_search(bt_add=bt_addr, sock=sock, logger=logger)
 				fuzz_sdp_service_search(bt_addr=bt_addr, sock=sock, logger=logger)
 				#fuzz_sdp_service_attr(bt_addr=bt_addr, sock=sock, logger=logger)
 				fuzz_sdp_service_search_attr(bt_addr=bt_addr, sock=sock, logger=logger)
