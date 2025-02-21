@@ -251,13 +251,16 @@ def sdp_fuzzing(bt_addr, test_info):
 		logger["packet"] = []
 		print("Start Fuzzing... Please hit Ctrl + C to finish...")
 		try:
-			#while (1):
-			# print("[+] Tested %d packets" % (packet_count))	
-			# if(len(logger['packet']) > 200000):
-			# 	del logger['packet'][:100000]
-			# sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
-			# fuzz_sdp_service_search(bt_addr=bt_addr, sock=sock, logger=logger)
-			send_test_packet(bt_addr=bt_addr, logger=logger)
+			while (1):
+				print("[+] Tested %d packets" % (packet_count))	
+				if(len(logger['packet']) > 200000):
+					del logger['packet'][:100000]
+				sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
+				send_initial_sdp_service_search(bt_add=bt_addr, sock=sock, logger=logger)
+				fuzz_sdp_service_search(bt_addr=bt_addr, sock=sock, logger=logger)
+				fuzz_sdp_service_attr(bt_addr=bt_addr, sock=sock, logger=logger)
+				fuzz_sdp_service_search_attr(bt_addr=bt_addr, sock=sock, logger=logger)
+			#send_test_packet(bt_addr=bt_addr, logger=logger)
 				
 		except Exception as e:
 			print("[!] Error Message :", e)
