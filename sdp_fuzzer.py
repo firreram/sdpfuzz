@@ -188,7 +188,32 @@ def send_initial_sdp_service_search(bt_add, sock, logger):
 	print(f"Current service handle list: {service_handle_list}")
 
 	current_tranid = (current_tranid + 1) % 0x10000
+ 
+def fuzz_sdp_service_search_attr(bt_addr, sock, logger):
+	global current_tranid
+	global fuzz_iteration
+	
+	for i in range(0, fuzz_iteration):
+		current_tranid = (current_tranid + 1) % 0x10000
+		param_dict, strategy, packet = generate_sdp_service_search_attr_packet_for_fuzzing(current_tranid=current_tranid, continuation_state=b'\x00')
+		sock, packet_info, response = send_sdp_packet(bt_addr=bt_addr, sock=sock, packet=packet, packet_type=0x06, process_resp=True)
+		if packet_info != "":
+			packet_info["params"] = param_dict
+			packet_info["strategy"] = strategy
+			logger["packet"].append(packet_info)
 
+			resp = parse_sdp_response(response)
+			while resp["continuation_state"] != b'\x00':
+				current_tranid = (current_tranid + 1) % 0x10000
+				param_dict, strategy, packet = generate_sdp_service_search_attr_packet_for_fuzzing(current_tranid=current_tranid, continuation_state=resp["continuation_state"])
+				sock, packet_info, response = send_sdp_packet(bt_addr=bt_addr, sock=sock, packet=packet, packet_type=0x06, process_resp=True)
+				if packet_info != "":
+					packet_info["params"] = param_dict
+					packet_info["strategy"] = strategy
+					logger["packet"].append(packet_info)
+				resp = parse_sdp_response(response)
+ 
+ 
 def fuzz_sdp_service_attr(bt_addr, sock, logger):
 	global current_tranid
 	global fuzz_iteration
@@ -196,6 +221,13 @@ def fuzz_sdp_service_attr(bt_addr, sock, logger):
 	
 	for i in range(0, fuzz_iteration):
 		service_handle = choice(service_handle_list)
+		current_tranid = (current_tranid + 1) % 0x10000
+		param_dict, strategy, packet = generate_sdp_service_attr_packet_for_fuzzing(current_tranid=current_tranid, service_handle=service_handle)
+		sock, packet_info, response = send_sdp_packet(bt_addr=bt_addr, sock=sock, packet=packet, packet_type=0x04, process_resp=False)
+		if packet_info != "":
+			packet_info["param_dict"] = param_dict
+			packet_info["strategy"] = strategy
+			logger["packet"].append(packet_info)
 
 def fuzz_sdp_service_search(bt_addr, sock, logger):
 	global fuzz_iteration

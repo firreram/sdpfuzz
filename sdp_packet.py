@@ -339,12 +339,23 @@ def generate_sdp_service_attr_packet_for_fuzzing(current_tranid, service_handle)
 	attr_list = generate_fixed_attribute_list1()
 	param_dict, packet = build_sdp_service_attr_request(tid=current_tranid, 
                                                      	service_record_handle=service_handle,
-                                                      	max_attr_byte_count=0xFFFF,
+                                                      	max_attr_byte_count=randrange(0x0007, 0x10000),
                                                        	attribute_list=attr_list)
 	strategy, garbage_value, packet = mutate_packet_for_fuzzing(packet)
+	param_dict["garbage_value"] = garbage_value.hex()
 	return param_dict, strategy, packet
 
-
+def generate_sdp_service_search_attr_packet_for_fuzzing(current_tranid, continuation_state):
+	uuid_list = generate_fixed_uuid_list()
+	attr_list = generate_fixed_attribute_list1()
+	param_dict, packet = build_sdp_service_search_attr_request(tid=current_tranid, 
+                                                            	uuid_list=uuid_list, 
+                                                             	max_attr_byte_count=randrange(0x0007, 0x10000),
+                                                              	attribute_list=attr_list,
+                                                               	continuation_state=continuation_state)
+	strategy, garbage_value, packet = mutate_packet_for_fuzzing(packet)
+	param_dict["garbage_value"] = garbage_value.hex()
+	return param_dict, strategy, packet
 
 
 def mutate_packet_for_fuzzing(packet):
