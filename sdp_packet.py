@@ -549,7 +549,7 @@ def parse_sdp_service_search_response(response):
 		#print(f"Handle raw:{handle_raw}")
 		handle_id = struct.unpack(">I", handle_raw)
 		handle_list.append(handle_id[0])
-		print(f"Handle record {curr_index+1}: {handle_id[0]:08x}")
+		#print(f"Handle record {curr_index+1}: {handle_id[0]:08x}")
 	continuation_state = handle_data[next_index:]
 	ret_data["handle_list"] = handle_list
 	ret_data["continuation_state"] = continuation_state
@@ -577,7 +577,7 @@ def parse_sdp_response(response):
 	}
 	try:
 		pdu_id = response[0]
-		print(f"PDU ID of response: {pdu_id}")
+		#print(f"PDU ID of response: {pdu_id}")
 		if pdu_id == 0x03:
 			ret_data = parse_sdp_service_search_response(response)
 			pass
@@ -591,6 +591,7 @@ def parse_sdp_response(response):
 			pass
 		else: #SDP Response Error
 			print("SDP Response error")
+			ret_data["continuation_state"] = b"\x00"
 		
 	except Exception as e:	
 		print(f"Parse error: {str(e)}")

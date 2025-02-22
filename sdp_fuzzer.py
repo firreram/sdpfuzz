@@ -176,6 +176,7 @@ def send_test_packet(bt_addr,logger):
 
 
 def send_initial_sdp_service_search(bt_add, sock, logger):
+	print("[+] Sending initial SDP service search to get all service handles...")
 	global current_tranid
 	global service_handle_list
 	for key in ASSIGNED_SERVICE_UUID.keys():
@@ -191,11 +192,12 @@ def send_initial_sdp_service_search(bt_add, sock, logger):
 	if len(service_handle_list) == 0: #in case no service handle
 		service_handle_list.append(b'\x10\x01')
 	service_handle_list = list(set(service_handle_list))
-	print(f"Current service handle list: {service_handle_list}")
+	#print(f"Current service handle list: {service_handle_list}")
 
 	current_tranid = (current_tranid + 1) % 0x10000
  
 def fuzz_sdp_service_search_attr(bt_addr, sock, logger):
+	print("[+] Fuzzing SDP Service Search Attributes")
 	global current_tranid
 	global fuzz_iteration
 	
@@ -218,9 +220,12 @@ def fuzz_sdp_service_search_attr(bt_addr, sock, logger):
 					packet_info["strategy"] = strategy
 					logger["packet"].append(packet_info)
 				resp = parse_sdp_response(response)
+		else:
+			print("Nothing for Service Search Attributes?")
  
  
 def fuzz_sdp_service_attr(bt_addr, sock, logger):
+	print("[+] Fuzzing SDP Service Attributes")
 	global current_tranid
 	global fuzz_iteration
 	global service_handle_list
@@ -234,8 +239,11 @@ def fuzz_sdp_service_attr(bt_addr, sock, logger):
 			packet_info["param_dict"] = param_dict
 			packet_info["strategy"] = strategy
 			logger["packet"].append(packet_info)
+		else:
+			print("Nothing for Service Attributes?")
 
 def fuzz_sdp_service_search(bt_addr, sock, logger):
+	print("[+] Fuzzing SDP Service Search")
 	global fuzz_iteration
 	global current_tranid
 	for i in range(0, fuzz_iteration):
@@ -246,6 +254,8 @@ def fuzz_sdp_service_search(bt_addr, sock, logger):
 			packet_info["param_dict"] = param_dict
 			packet_info["strategy"] = strategy
 			logger["packet"].append(packet_info)
+		else:
+			print("Nothing for Service Search?")
 
 def sdp_fuzzing(bt_addr, test_info):
 	global current_tranid
