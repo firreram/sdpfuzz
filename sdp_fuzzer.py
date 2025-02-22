@@ -14,7 +14,7 @@ current_tranid = 0x0001
 packet_count = 0
 crash_count = 0
 service_handle_list = []
-fuzz_iteration = 2500
+fuzz_iteration = 2000
 '''
 		packet_info["no"] = pkt_cnt
 		packet_info["protocol"] = "L2CAP"
@@ -43,9 +43,9 @@ def send_sdp_packet(bt_addr, sock, packet, packet_type, process_resp=False):
 		if process_resp:
 			response = sock.recv(4096)
 			packet_info["response_data"] = response.hex()
-		else:
-			sock = sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
-			sock.connect((bt_addr, 1))
+		# else:
+		# 	sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
+		# 	sock.connect((bt_addr, 1))
 	except ConnectionResetError:
 		print("[-] Crash Found - ConnectionResetError detected")
 		if(l2ping(bt_addr) == False):
@@ -127,6 +127,16 @@ def send_sdp_packet(bt_addr, sock, packet, packet_type, process_resp=False):
 			packet_info["crash_info"] = "OSError - Host is down"
 			print("[-] Crash packet causes HOST DOWN. Test finished.")
 		else:
+			packet_info = {}
+			packet_info["no"] = packet_count
+			packet_info["protocol"] = "SDP"
+			packet_info["sent_time"] = str(datetime.now())
+			packet_info["packet_type"] = packet_type
+			packet_info["raw_packet"] = packet.hex()
+			packet_info["sended?"] = "n"			
+			packet_info["crash"] = "y"
+			packet_info["DoS"] = "y"
+			packet_info["crash_info"] = str(e)
 			pass
 	
 	#sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)

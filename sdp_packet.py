@@ -582,15 +582,15 @@ def parse_sdp_response(response):
 			ret_data = parse_sdp_service_search_response(response)
 			pass
 		elif pdu_id == 0x05:
-			print("Service attribute response")
+			#print("Service attribute response")
 			ret_data = parse_sdp_service_attribute_response(response)
 			pass
 		elif pdu_id == 0x07:
-			print("Service search attribute response")
+			#print("Service search attribute response")
 			ret_data = parse_sdp_service_attribute_response(response)
 			pass
 		else: #SDP Response Error
-			print("SDP Response error")
+			#print("SDP Response error")
 			ret_data["continuation_state"] = b"\x00"
 		
 	except Exception as e:	
