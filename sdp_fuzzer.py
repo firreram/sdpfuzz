@@ -43,6 +43,9 @@ def send_sdp_packet(bt_addr, sock, packet, packet_type, process_resp=False):
 		if process_resp:
 			response = sock.recv(4096)
 			packet_info["response_data"] = response.hex()
+		else:
+			sock = sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
+			sock.connect((bt_addr, 1))
 	except ConnectionResetError:
 		print("[-] Crash Found - ConnectionResetError detected")
 		if(l2ping(bt_addr) == False):
@@ -175,17 +178,19 @@ def send_test_packet(bt_addr,logger):
 def send_initial_sdp_service_search(bt_add, sock, logger):
 	global current_tranid
 	global service_handle_list
-	param_dict, packet = build_sdp_search_request(current_tranid, 0xFF, [ASSIGNED_SERVICE_UUID["Public Browse Group"]])
-	sock, packet_info, response = send_sdp_packet(bt_addr=bt_add, sock=sock, packet=packet, packet_type=0x02, process_resp=True)
-	if packet_info != "":
-		packet_info["params"] = param_dict
-		logger["packet"].append(packet_info)
-		if response != b'\x00':
-			resp = parse_sdp_response(response)
-			if resp["handle_list"] is not None:
-				service_handle_list = resp["handle_list"]
+	for key in ASSIGNED_SERVICE_UUID.keys():
+		param_dict, packet = build_sdp_search_request(current_tranid, 0xFF, [ASSIGNED_SERVICE_UUID[key]])
+		sock, packet_info, response = send_sdp_packet(bt_addr=bt_add, sock=sock, packet=packet, packet_type=0x02, process_resp=True)
+		if packet_info != "":
+			packet_info["params"] = param_dict
+			logger["packet"].append(packet_info)
+			if response != b'\x00':
+				resp = parse_sdp_response(response)
+				if resp["handle_list"] is not None:
+					service_handle_list.extend(resp["handle_list"])
 	if len(service_handle_list) == 0: #in case no service handle
 		service_handle_list.append(b'\x10\x01')
+	service_handle_list = list(set(service_handle_list))
 	print(f"Current service handle list: {service_handle_list}")
 
 	current_tranid = (current_tranid + 1) % 0x10000
@@ -258,11 +263,12 @@ def sdp_fuzzing(bt_addr, test_info):
 					del logger['packet'][:100000]
 				sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
 				sock.connect((bt_addr, 1))
-				#send_initial_sdp_service_search(bt_add=bt_addr, sock=sock, logger=logger)
+				send_initial_sdp_service_search(bt_add=bt_addr, sock=sock, logger=logger)
 				fuzz_sdp_service_search(bt_addr=bt_addr, sock=sock, logger=logger)
-				#fuzz_sdp_service_attr(bt_addr=bt_addr, sock=sock, logger=logger)
+				fuzz_sdp_service_attr(bt_addr=bt_addr, sock=sock, logger=logger)
 				fuzz_sdp_service_search_attr(bt_addr=bt_addr, sock=sock, logger=logger)
-			#send_test_packet(bt_addr=bt_addr, logger=logger)
+				#send_test_packet(bt_addr=bt_addr, logger=logger)
+				#break
 				
 		except Exception as e:
 			print("[!] Error Message :", e)
@@ -279,7 +285,7 @@ def sdp_fuzzing(bt_addr, test_info):
 			logger["count"] = {"all" : packet_count, "crash" : crash_count, "passed" : packet_count-crash_count}
 			#json.dump(logger, f, indent="\t")
 		finally:
-			print(logger)
+			#print(logger)
 			json.dump(logger, f, indent="\t")
 			
 	

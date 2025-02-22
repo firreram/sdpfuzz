@@ -325,35 +325,70 @@ def generate_uuid_list():
 	
 def generate_sdp_service_search_packet_for_fuzzing(current_tranid):
 	uuid_list = generate_fixed_uuid_list()
+	garbage_value = b"\x00"
+	continuation_state = garbage_value
+	my_choice = random()
+	strategy = ""
+
 	strategy = "sdp_service_search_empty_list" if len(uuid_list) == 0 else ("sdp_service_search_overload_list" if len(uuid_list) > 12 else "")
+	if my_choice < 0.5 and len(strategy) == 0:
+		garbage_value = generate_garbage()
+		continuation_state = garbage_value
+		strategy = "add_garbage_continuation_state"
+  
 	param_dict, packet = build_sdp_search_request(tid=current_tranid,
                                                		max_record=0xFFFF,
-                                                 	uuid_list=uuid_list
-                                                  	)
+                                                 	uuid_list=uuid_list,
+                                                  	continuation_state=continuation_state)
 	if len(strategy) == 0: #no strategy yet
 		strategy, garbage_value, packet = mutate_packet_for_fuzzing(packet)
-		param_dict["garbage_value"] = garbage_value.hex()
+	param_dict["garbage_value"] = garbage_value.hex()
 	return param_dict, strategy, packet
 
 def generate_sdp_service_attr_packet_for_fuzzing(current_tranid, service_handle):
 	attr_list = generate_fixed_attribute_list1()
+	garbage_value = b"\x00"
+	continuation_state = garbage_value
+	my_choice = random()
+	strategy = ""
+	if my_choice < 0.5:
+		garbage_value = generate_garbage()
+		continuation_state = garbage_value
+		strategy = "add_garbage_continuation_state"
+	
 	param_dict, packet = build_sdp_service_attr_request(tid=current_tranid, 
                                                      	service_record_handle=service_handle,
                                                       	max_attr_byte_count=randrange(0x0007, 0x10000),
-                                                       	attribute_list=attr_list)
-	strategy, garbage_value, packet = mutate_packet_for_fuzzing(packet)
+                                                       	attribute_list=attr_list,
+                                                        continuation_state=continuation_state)
+	if len(strategy) == 0:
+		strategy, garbage_value, packet = mutate_packet_for_fuzzing(packet)
+	
 	param_dict["garbage_value"] = garbage_value.hex()
 	return param_dict, strategy, packet
 
 def generate_sdp_service_search_attr_packet_for_fuzzing(current_tranid, continuation_state):
 	uuid_list = generate_fixed_uuid_list()
 	attr_list = generate_fixed_attribute_list1()
+	strategy = ""
+	garbage_value = b"\x00"
+	if continuation_state == b"\x00":
+
+		my_choice = random()
+
+		if my_choice < 0.5:
+			garbage_value = generate_garbage()
+			continuation_state = garbage_value
+			strategy = "add_garbage_continuation_state"
+   
 	param_dict, packet = build_sdp_service_search_attr_request(tid=current_tranid, 
                                                             	uuid_list=uuid_list, 
                                                              	max_attr_byte_count=randrange(0x0007, 0x10000),
                                                               	attribute_list=attr_list,
                                                                	continuation_state=continuation_state)
-	strategy, garbage_value, packet = mutate_packet_for_fuzzing(packet)
+	if len(strategy) == 0:
+		strategy, garbage_value, packet = mutate_packet_for_fuzzing(packet)
+  
 	param_dict["garbage_value"] = garbage_value.hex()
 	return param_dict, strategy, packet
 
@@ -389,6 +424,8 @@ def generate_garbage():
 	else:
 		rand_garbage = randrange(0x0000000000000000, 0x10000000000000000)
 		garbage_value = struct.pack(">Q", rand_garbage)
+	garbage_length = len(garbage_value)
+	garbage_value = struct.pack(">B", garbage_length) + garbage_value
 	return garbage_value
 
 # Strategy 1: append garbage to packet
@@ -501,7 +538,7 @@ def parse_sdp_service_search_response(response):
 	current_records = struct.unpack(">H", response[7:9])[0]
 	# Parse handle list
 	handle_data = response[9:]  # Skip continuation state
-	print(f"Handle data: {handle_data}")
+	#print(f"Handle data: {handle_data}")
 	start_index = 0
 	next_index = 0
 	handle_list = []
@@ -512,7 +549,7 @@ def parse_sdp_service_search_response(response):
 		#print(f"Handle raw:{handle_raw}")
 		handle_id = struct.unpack(">I", handle_raw)
 		handle_list.append(handle_id[0])
-		#print(f"Handle record {curr_index+1}: {handle_id[0]:08x}")
+		print(f"Handle record {curr_index+1}: {handle_id[0]:08x}")
 	continuation_state = handle_data[next_index:]
 	ret_data["handle_list"] = handle_list
 	ret_data["continuation_state"] = continuation_state
