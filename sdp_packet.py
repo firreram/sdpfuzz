@@ -224,8 +224,9 @@ def build_uuid_struct(uuid_str):
 			
 	uuid_struct = struct.pack("B", elem_type) + value
 	return uuid_struct
+    
 
-def build_attribute_list_pattern(attribute_list=[{"attribute_id":0x0001, "isRange":False}]):
+def build_attribute_list_pattern(attribute_list=[{"attribute_id":0x0001, "isRange":False}], to_fuzz=False):
 	data_seq_type_code = TYPE_DESCRIPTOR_CODE["Data Element Sequence"]
 	data_seq_size_code = SIZE_DESCRIPTOR_CODE["Data_Size_Additional_8_bits"]
 	data_seq_header = struct.pack("B",build_prot_descriptor_header(data_seq_type_code, data_seq_size_code))
@@ -234,21 +235,30 @@ def build_attribute_list_pattern(attribute_list=[{"attribute_id":0x0001, "isRang
 		if "attribute_id" in attr_id:
 			isRange = attr_id["isRange"] if "isRange" in attr_id else False
 			attr_struct = build_attr_id_struct(attr_id["attribute_id"], isRange)
-			data_elements.append(attr_struct)
+
+			mychoice = random()
+			if mychoice <= 0.5 and to_fuzz:
+				garbage_value = generate_garbage(False)
+				attr_struct = attr_struct + garbage_value
+			data_elements.append(attr_struct)	
 	elements_payload = b"".join(data_elements)
 	payload_len = len(elements_payload)
 	seq_header = data_seq_header + struct.pack(">B", payload_len)
 	attribute_pattern = seq_header + elements_payload
 	return attribute_pattern
 
-def build_sdp_search_pattern(uuid_list):
+def build_sdp_search_pattern(uuid_list, to_fuzz=False):
 	data_elements = []
 	data_seq_type_code = TYPE_DESCRIPTOR_CODE["Data Element Sequence"]
 	data_seq_size_code = SIZE_DESCRIPTOR_CODE["Data_Size_Additional_8_bits"]
 	data_seq_header = struct.pack("B",build_prot_descriptor_header(data_seq_type_code, data_seq_size_code))
 	
 	for uuid_str in uuid_list:
-		uuid_struct = build_uuid_struct(uuid_str)	   
+		uuid_struct = build_uuid_struct(uuid_str)
+		mychoice = random()
+		if mychoice <= 0.5 and to_fuzz:
+			garbage_value = generate_garbage(False)
+			uuid_struct = uuid_struct + garbage_value
 		data_elements.append(uuid_struct)
 		
 	# 2. Build Data Element Sequence
@@ -408,7 +418,7 @@ def mutate_packet_for_fuzzing(packet):
 		new_packet = flip_bits_in_packet(packet)
 	return strategy, garbage_value, new_packet
 
-def generate_garbage():
+def generate_garbage(add_length=True):
 	rand_bit = randrange(0, 4)
 	garbage_value = b""
 	rand_garbage = 0x00
@@ -425,7 +435,7 @@ def generate_garbage():
 		rand_garbage = randrange(0x0000000000000000, 0x10000000000000000)
 		garbage_value = struct.pack(">Q", rand_garbage)
 	garbage_length = len(garbage_value)
-	garbage_value = struct.pack(">B", garbage_length) + garbage_value
+	garbage_value = (struct.pack(">B", garbage_length) if add_length else b"") + garbage_value
 	return garbage_value
 
 # Strategy 1: append garbage to packet
@@ -461,8 +471,8 @@ def flip_bits_in_packet(packet, mutation_rate=0.05):
 	return bytes(packet_bytes)
 	
 
-def build_sdp_search_request(tid=0x0001, max_record=10, uuid_list=[ASSIGNED_SERVICE_UUID["Service Discovery Server"]], continuation_state=b'\x00'):	
-	service_search_pattern = build_sdp_search_pattern(uuid_list)
+def build_sdp_search_request(tid=0x0001, max_record=10, uuid_list=[ASSIGNED_SERVICE_UUID["Service Discovery Server"]], continuation_state=b'\x00', to_fuzz=False):	
+	service_search_pattern = build_sdp_search_pattern(uuid_list, to_fuzz=to_fuzz)
 
 	pdu_header = struct.pack(">BHH", 
 						   0x02,  # PDU ID
@@ -478,8 +488,8 @@ def build_sdp_search_request(tid=0x0001, max_record=10, uuid_list=[ASSIGNED_SERV
 	packet = pdu_header + service_search_pattern + max_records + continuation
 	return parameter_dict, packet
 
-def build_sdp_service_attr_request(tid=0x0001, service_record_handle=0x0001, max_attr_byte_count=0x0007, attribute_list=[{"attribute_id":0x0001, "isRange":False}],continuation_state=b'\x00'):
-	attribute_pattern = build_attribute_list_pattern(attribute_list)
+def build_sdp_service_attr_request(tid=0x0001, service_record_handle=0x0001, max_attr_byte_count=0x0007, attribute_list=[{"attribute_id":0x0001, "isRange":False}],continuation_state=b'\x00', to_fuzz=False):
+	attribute_pattern = build_attribute_list_pattern(attribute_list, to_fuzz=to_fuzz)
 	
 	pdu_header = struct.pack(">BHHIH",
 							 0x04,
@@ -497,12 +507,12 @@ def build_sdp_service_attr_request(tid=0x0001, service_record_handle=0x0001, max
 	
 	return parameter_dict, pdu_header + attribute_pattern + continuation
 
-def build_sdp_service_search_attr_request(tid=0x0001, uuid_list=[ASSIGNED_SERVICE_UUID["Service Discovery Server"]],max_attr_byte_count=0x0007, attribute_list=[{"attribute_id":0x0001, "isRange":False}], continuation_state=b'\x00' ):
+def build_sdp_service_search_attr_request(tid=0x0001, uuid_list=[ASSIGNED_SERVICE_UUID["Service Discovery Server"]],max_attr_byte_count=0x0007, attribute_list=[{"attribute_id":0x0001, "isRange":False}], continuation_state=b'\x00' , to_fuzz=False):
 	#1) build search pattern first
-	service_search_pattern = build_sdp_search_pattern(uuid_list)
+	service_search_pattern = build_sdp_search_pattern(uuid_list, to_fuzz=to_fuzz)
  
 	#2) build attribute pattern
-	attribute_pattern = build_attribute_list_pattern(attribute_list)
+	attribute_pattern = build_attribute_list_pattern(attribute_list, to_fuzz=to_fuzz)
  
 	#3) calculate length, should be len(ssp) + len(ap) + len(max_attr_count) + len(continuation_state)
 	pattern_length = len(service_search_pattern) + len(attribute_pattern) + 2 + len(continuation_state)

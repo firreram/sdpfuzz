@@ -2,11 +2,8 @@ import sys, os, subprocess
 import json, datetime
 import bluetooth
 from l2cap_fuzzer import *
-from scapy.all import *
-from scapy.packet import Packet
 from random import *
 from collections import OrderedDict
-from scapy.layers.bluetooth import L2CAP_Hdr
 from sdp_packet import *
 import traceback
 
@@ -38,7 +35,7 @@ def send_sdp_packet(bt_addr, sock, packet, packet_type, process_resp=False):
 		packet_info["packet_type"] = packet_type
 		packet_info["raw_packet"] = packet.hex()
 		packet_info["crash"] = "n"
-		packet_info["sended?"] = "n"	
+		packet_info["sended?"] = "y"	
 		
 		if process_resp:
 			response = sock.recv(4096)
@@ -205,7 +202,8 @@ def send_initial_sdp_service_search(bt_add, sock, logger):
 	#print(f"Current service handle list: {service_handle_list}")
 
 	current_tranid = (current_tranid + 1) % 0x10000
- 
+
+
 def fuzz_sdp_service_search_attr(bt_addr, sock, logger):
 	print("[+] Fuzzing SDP Service Search Attributes")
 	global current_tranid
@@ -251,6 +249,68 @@ def fuzz_sdp_service_attr(bt_addr, sock, logger):
 			logger["packet"].append(packet_info)
 		else:
 			print("Nothing for Service Attributes?")
+
+def fuzz_sdp_service_attr_garbage_list(bt_addr, sock, logger):
+	print("[+] Fuzzing SDP Service Attributes (Add garbage to lists)")
+	global fuzz_iteration
+	global current_tranid
+	global service_handle_list
+	for i in range(0, fuzz_iteration):
+		service_handle = choice(service_handle_list)
+		current_tranid = (current_tranid + 1) % 0x10000
+		attr_list = generate_fixed_attribute_list1()
+		param_dict, packet = build_sdp_service_attr_request(tid=current_tranid, service_record_handle=service_handle, max_attr_byte_count=randrange(0x07, 0x10000), attribute_list=attr_list, continuation_state=b'\x00', to_fuzz=True)
+		sock, packet_info, response = send_sdp_packet(bt_addr=bt_addr, sock=sock, packet=packet, packet_type=0x04, response_resp=False)
+		if packet_info != "":
+			packet_info["param_dict"] = param_dict
+			packet_info["strategy"] = "Add garbage to UUID/Attribute List"
+			logger["packet"].append(packet_info)
+
+def fuzz_sdp_service_attr_garbage_continuation_state(bt_addr, sock, logger):
+	print("[+] Fuzzing SDP Service Attributes (Add garbage to continuation state)")
+	global fuzz_iteration
+	global current_tranid
+	global service_handle_list
+	for i in range(0, fuzz_iteration):
+		service_handle = choice(service_handle_list)
+		current_tranid = (current_tranid + 1) % 0x10000
+		attr_list = generate_fixed_attribute_list1()
+		garbage_value = generate_garbage(add_length=True)
+		param_dict, packet = build_sdp_service_attr_request(tid=current_tranid, service_record_handle=service_handle, max_attr_byte_count=randrange(0x07, 0x10000), attribute_list=attr_list, continuation_state=garbage_value, to_fuzz=False)
+		sock, packet_info, response = send_sdp_packet(bt_addr=bt_addr, sock=sock, packet=packet, packet_type=0x04, response_resp=False)
+		if packet_info != "":
+			packet_info["param_dict"] = param_dict
+			packet_info["strategy"] = "Add garbage to continuation state"
+			logger["packet"].append(packet_info)
+
+def fuzz_sdp_service_search_garbage_list(bt_addr, sock, logger):
+	print("[+] Fuzzing SDP Service Search (Add garbage to lists)")
+	global fuzz_iteration
+	global current_tranid
+	for i in range(0, fuzz_iteration):
+		current_tranid = (current_tranid+1) % 0x10000
+		uuid_list = generate_fixed_uuid_list()
+		param_dict, packet = build_sdp_search_request(tid=current_tranid, max_record=randrange(0x01, 0x10000), uuid_list=uuid_list, continuation_state=b'\x00', to_fuzz=True)
+		sock, packet_info, response = send_sdp_packet(bt_addr=bt_addr, sock=sock, packet=packet, packet_type=0x02, response_resp=False)
+		if packet_info != "":
+			packet_info["param_dict"] = param_dict
+			packet_info["strategy"] = "Add garbage to UUID/Attribute List"
+			logger["packet"].append(packet_info)
+
+def fuzz_sdp_service_search_garbage_continuation_state(bt_addr, sock, logger):
+	print("[+] Fuzzing SDP Service Search (Add garbage to continuation state)")
+	global fuzz_iteration
+	global current_tranid
+	for i in range(0, fuzz_iteration):
+		current_tranid = (current_tranid+1) % 0x10000
+		uuid_list = generate_fixed_uuid_list()
+		garbage_value = generate_garbage(add_length=True)
+		param_dict, packet = build_sdp_search_request(tid=current_tranid, max_record=randrange(0x01, 0x10000), uuid_list=uuid_list, continuation_state=garbage_value, to_fuzz=False)
+		sock, packet_info, response = send_sdp_packet(bt_addr=bt_addr, sock=sock, packet=packet, packet_type=0x02, response_resp=False)
+		if packet_info != "":
+			packet_info["param_dict"] = param_dict
+			packet_info["strategy"] = "Add garbage to continuation state"
+			logger["packet"].append(packet_info)
 
 def fuzz_sdp_service_search(bt_addr, sock, logger):
 	print("[+] Fuzzing SDP Service Search")
