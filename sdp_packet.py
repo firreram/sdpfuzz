@@ -402,6 +402,10 @@ def generate_sdp_service_search_attr_packet_for_fuzzing(current_tranid, continua
 	param_dict["garbage_value"] = garbage_value.hex()
 	return param_dict, strategy, packet
 
+def generate_garbage_sdp_packet_for_fuzzing(current_tranid, pdu_id):
+	param_dict, packet = build_garbage_sdp_package(tid=current_tranid, pdu_id=pdu_id)
+	strategy = "Full garbage packet"
+	return param_dict, strategy, packet
 
 def mutate_packet_for_fuzzing(packet):
 	my_choice = random()
@@ -438,6 +442,14 @@ def generate_garbage(add_length=True):
 	garbage_value = (struct.pack(">B", garbage_length) if add_length else b"") + garbage_value
 	return garbage_value
 
+def generate_large_garbage(add_length=True):
+	rand_garbage_1 = randrange(0x0000000000000000, 0x10000000000000000)
+	rand_garbage_2 = randrange(0x0000000000000000, 0x10000000000000000)
+	garbage_value = struct.pack(">Q", rand_garbage_1) + struct.pack(">Q", rand_garbage_2)
+	garbage_length = len(garbage_value)
+	garbage_value = (struct.pack(">B", garbage_length) if add_length else b"") + garbage_value
+	return garbage_value
+
 # Strategy 1: append garbage to packet
 def add_garbage_to_packet(packet):
 	packet_header_wo_length = packet[0:3]
@@ -470,6 +482,15 @@ def flip_bits_in_packet(packet, mutation_rate=0.05):
 			packet_bytes[i] ^= bit_to_flip
 	return bytes(packet_bytes)
 	
+def build_garbage_sdp_package(tid=0x0001, pdu_id=0x01):
+	pdu_header = struct.pack(">BH", 
+						   pdu_id,  # PDU ID
+						   tid  # Transaction ID
+						   )
+	garbage_value = generate_large_garbage()
+	parameter_dict = build_parameter_dictionary(pdu_id=pdu_id, current_tranid=tid)
+	packet = pdu_header + garbage_value
+	return parameter_dict, packet
 
 def build_sdp_search_request(tid=0x0001, max_record=10, uuid_list=[ASSIGNED_SERVICE_UUID["Service Discovery Server"]], continuation_state=b'\x00', to_fuzz=False):	
 	service_search_pattern = build_sdp_search_pattern(uuid_list, to_fuzz=to_fuzz)

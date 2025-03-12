@@ -792,7 +792,7 @@ def l2cap_fuzzing(bt_addr, profile, port, test_info):
 		print('Cannot Fuzzing')
 		return
 
-	with open('log_{}.wfl'.format(test_info["starting_time"][11:19].replace(':',"",2)), 'w', encoding="utf-8") as f:
+	with open('log_{}.wfl'.format(test_info["starting_time"]), 'w', encoding="utf-8") as f:
 		logger = OrderedDict()
 		logger.update(test_info)
 		logger["packet"] = []

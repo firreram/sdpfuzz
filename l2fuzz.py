@@ -10,9 +10,9 @@ from l2cap_fuzzer import *
 from sdp_fuzzer import *
 
 now = datetime.now()
-nowTime = now.strftime('%H%M%S')
+nowTime = now.strftime('%Y%m%d%H%M')
 test_info = OrderedDict()
-test_info["starting_time"] = str(now)
+test_info["starting_time"] = nowTime
 test_info["interface"] = "Bluetooth_L2CAP"
 test_info["toolVer"] = "1.0.0"
 
