@@ -15,12 +15,12 @@ def build_prot_descriptor_header(type_code, size_code):
 	return type_code << 3 | size_code
 
 # helper function to build the attribute ids or uuid data sequences
-def build_attr_id_struct(attr_id, isRange=False):
+def build_attr_id_struct(attr_id, is_range=False):
 	#print(f"Attr Id: {attr_id}")
 	attr_type_code = TYPE_DESCRIPTOR_CODE["Unsigned Integer"]
-	attr_size_code = SIZE_DESCRIPTOR_CODE["2Bytes"] if not isRange else SIZE_DESCRIPTOR_CODE["4Bytes"]
+	attr_size_code = SIZE_DESCRIPTOR_CODE["2Bytes"] if not is_range else SIZE_DESCRIPTOR_CODE["4Bytes"]
 	elem_type = build_prot_descriptor_header(attr_type_code, attr_size_code)
-	value = struct.pack(">H", attr_id) if not isRange else struct.pack(">I", attr_id)
+	value = struct.pack(">H", attr_id) if not is_range else struct.pack(">I", attr_id)
 	attr_struct = struct.pack("B", elem_type) + value
 	return attr_struct
 
@@ -55,8 +55,8 @@ def build_attribute_list_pattern(attribute_list=[{"attribute_id":0x0001, "isRang
 	data_elements = []
 	for attr_id in attribute_list:
 		if "attribute_id" in attr_id:
-			isRange = attr_id["isRange"] if "isRange" in attr_id else False
-			attr_struct = build_attr_id_struct(attr_id["attribute_id"], isRange)
+			is_range = attr_id["isRange"] if "isRange" in attr_id else False
+			attr_struct = build_attr_id_struct(attr_id["attribute_id"], is_range)
 
 			mychoice = random()
 			if mychoice <= 0.5 and to_fuzz:
@@ -86,7 +86,6 @@ def build_sdp_search_pattern(uuid_list, to_fuzz=False):
 	# 2. Build Data Element Sequence
 	elements_payload = b"".join(data_elements)
 	payload_len = len(elements_payload)
-	#seq_len = len(elements_payload) + 3
 	seq_header = data_seq_header + struct.pack(">B", payload_len) 
 	service_search_pattern = seq_header + elements_payload
 	return service_search_pattern
@@ -97,7 +96,6 @@ def generate_fixed_attribute_list1():
 	attr_list = []
 	min_attr_id = 0x0000
 	max_attr_id = 0xFFFF	
-	current_attr_id = min_attr_id
 	attr_dict = {"attribute_id": min_attr_id, "isRange": False}
 	attr_list.append(attr_dict)
 	attr_dict = {"attribute_id": ((min_attr_id+1)<<16) | (max_attr_id-1), "isRange": True}
@@ -139,7 +137,7 @@ def generate_uuid_list():
 	list_range = randrange(0, 15)
 	uuid_list = []
 	if list_range > 0:
-		for i in range(0, list_range):
+		for _ in range(0, list_range):
 			my_choice = random()
 			if my_choice < 0.7: #use uuid from assigned list
 				rand_key = choice(list(ASSIGNED_SERVICE_UUID.keys()))
@@ -147,8 +145,6 @@ def generate_uuid_list():
 			else: #random uuid
 				random_uuid = uuid.uuid4()
 				if my_choice < 0.9: #add base
-					# random_part = random_uuid.hex[:20]
-					# custom_uuid = f"{random_part[:8]}-{random_part[8:12]}-{random_part[12:16]}-1000-8000-00805f9b34fb"
 					uuid_list.append(str(random_uuid))
 				else:
 					uuid_list.append(str(random_uuid))
@@ -287,7 +283,10 @@ def build_garbage_sdp_package(tid=0x0001, pdu_id=0x01):
 						   pdu_id,  # PDU ID
 						   tid  # Transaction ID
 						   )
-	garbage_value = generate_large_garbage()
+	
+	mychoice = 1 #random()
+	additional_garbage = b"" if mychoice < 0.5 else generate_garbage_by_byte(byte_count=randrange(0x01, 0x10), add_length=False)
+	garbage_value = generate_large_garbage() + additional_garbage
 	parameter_dict = build_parameter_dictionary(pdu_id=pdu_id, current_tranid=tid)
 	packet = pdu_header + garbage_value
 	return parameter_dict, packet
@@ -414,15 +413,9 @@ def parse_sdp_response(response):
 		#print(f"PDU ID of response: {pdu_id}")
 		if pdu_id == 0x03:
 			ret_data = parse_sdp_service_search_response(response)
-			pass
-		elif pdu_id == 0x05:
+		elif pdu_id == 0x05 or pdu_id == 0x07:
 			#print("Service attribute response")
 			ret_data = parse_sdp_service_attribute_response(response)
-			pass
-		elif pdu_id == 0x07:
-			#print("Service search attribute response")
-			ret_data = parse_sdp_service_attribute_response(response)
-			pass
 		else: #SDP Response Error
 			#print("SDP Response error")
 			ret_data["continuation_state"] = b"\x00"

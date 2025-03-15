@@ -1,5 +1,4 @@
 
-from scapy.all import *
 from scapy.packet import Packet
 from random import *
 from collections import OrderedDict
@@ -147,7 +146,6 @@ SERVICE_ATTRIBUTE_ID = {
 
 def generate_garbage_by_byte(byte_count=4, add_length=True):
 	garbage_value = b""
-	rand_garbage = 0x00
 	for _ in range(0,byte_count):
 		rand_garbage = randrange(0x00, 0x100)
 		garbage_value = garbage_value + struct.pack(">B", rand_garbage)
@@ -158,7 +156,6 @@ def generate_garbage_by_byte(byte_count=4, add_length=True):
 def generate_garbage(add_length=True):
 	rand_bit = randrange(0, 4)
 	garbage_value = b""
-	rand_garbage = 0x00
 	if rand_bit == 0:
 		rand_garbage = randrange(0x00, 0x100)
 		garbage_value = struct.pack(">B", rand_garbage)
