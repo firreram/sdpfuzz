@@ -9,6 +9,8 @@ from collections import OrderedDict
 from l2cap_fuzzer import *
 from sdp_fuzzer import *
 
+from config import ConfigManager
+
 now = datetime.now()
 nowTime = now.strftime('%Y%m%d%H%M')
 test_info = OrderedDict()
@@ -215,7 +217,7 @@ def bluetooth_classic_scan():
 
 	while(True):
 		# Scan for nearby devices in regular bluetooth mode
-		nearby_devices = bluetooth.discover_devices(duration=6, flush_cache=True, lookup_names=True, lookup_class=True)
+		nearby_devices = bluetooth.discover_devices(duration=ConfigManager.get_scan_duration(), flush_cache=True, lookup_names=True, lookup_class=True)
 		i = 0
 		print("\n\tTarget Bluetooth Device List")
 		print("\t[No.]\t[BT address]\t\t[Device name]\t\t[Device Class]\t\t[OUI]")
@@ -305,7 +307,9 @@ def bluetooth_services_and_protocols_search(bt_addr):
 if __name__== "__main__":
 	# targetting
 	#bluetooth_reset()
-	bluetooth_restart()
+	ConfigManager.load_config()
+	if ConfigManager.get_restart_bluetooth():
+		bluetooth_restart()
 	target_addr, fuzzer_choice = bluetooth_classic_scan()
 	if fuzzer_choice == 1:
 		target_service =  bluetooth_services_and_protocols_search(target_addr)

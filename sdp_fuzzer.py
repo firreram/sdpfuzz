@@ -7,20 +7,13 @@ from collections import OrderedDict
 from sdp_packet import *
 from sdp_util import *
 import traceback
-
+from config import ConfigManager
 current_tranid = 0x0001
 packet_count = 0
 crash_count = 0
 service_handle_list = []
 fuzz_iteration = 5000
-'''
-		packet_info["no"] = pkt_cnt
-		packet_info["protocol"] = "L2CAP"
-		packet_info["sended_time"] = str(datetime.now())
-		packet_info["payload"] = log_pkt(pkt)
-		packet_info["crash"] = "n"
-		packet_info["l2cap_state"] = state
-'''
+
 def send_sdp_packet(bt_addr, sock, packet, packet_type, process_resp=False):
 	global packet_count, crash_count
 	packet_count += 1
@@ -345,10 +338,13 @@ def sdp_fuzzing(bt_addr, test_info):
 	global current_tranid
 	global packet_count
 	global crash_count
+	global fuzz_iteration
 	with open('sdp_log_{}.wfl'.format(test_info["starting_time"]), 'w', encoding="utf-8") as f:
 		logger = OrderedDict()
 		logger.update(test_info)
 		logger["packet"] = []
+		fuzz_iteration = ConfigManager.get_fuzz_iteration()
+
 		print("Start Fuzzing... Please hit Ctrl + C to finish...")
 		try:
 			sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
@@ -358,8 +354,10 @@ def sdp_fuzzing(bt_addr, test_info):
 				print("[+] Tested %d packets" % (packet_count))	
 				if(len(logger['packet']) > 200000):
 					del logger['packet'][:100000]
-
-				fuzz_sdp_full_garbage(bt_addr=bt_addr, sock=sock, logger=logger)
+				
+				if ConfigManager.get_random_fuzzing():
+					fuzz_sdp_full_garbage(bt_addr=bt_addr, sock=sock, logger=logger)
+					
     
 				fuzz_sdp_service_search_garbage_list(bt_addr=bt_addr, sock=sock, logger=logger)
 				fuzz_sdp_service_search_garbage_continuation_state(bt_addr=bt_addr, sock=sock, logger=logger)

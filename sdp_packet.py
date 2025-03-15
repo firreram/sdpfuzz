@@ -222,7 +222,7 @@ def generate_sdp_service_search_attr_packet_for_fuzzing(current_tranid, continua
 
 def generate_garbage_sdp_packet_for_fuzzing(current_tranid, pdu_id):
 	param_dict, packet = build_garbage_sdp_package(tid=current_tranid, pdu_id=pdu_id)
-	strategy = "Full garbage packet"
+	strategy = "full_garbage_packet"
 	return param_dict, strategy, packet
 
 def mutate_packet_for_fuzzing(packet):
@@ -277,16 +277,17 @@ def build_parameter_dictionary(pdu_id=0x00, current_tranid=0x0001, service_handl
 	param_dict["garbage_value"]=garbage_value.hex()
 	return param_dict
 
-# Strategy 	
+# Strategy: random garbage as body. This strategy is equivalent to just sending rubbish to the SDP server without considering the grammar. 
+# Keeping this strategy around as a means to find any random bug that is otherwise undetectable by other strategies.
 def build_garbage_sdp_package(tid=0x0001, pdu_id=0x01):
-	pdu_header = struct.pack(">BH", 
+	mychoice = random()
+	garbage_value = generate_large_garbage(add_length=False)
+	packet_length = 0x00 if mychoice < 0.5 else len(garbage_value) #chance for a zero length packet with garbage
+	pdu_header = struct.pack(">BHH", 
 						   pdu_id,  # PDU ID
-						   tid  # Transaction ID
+						   tid,  # Transaction ID
+						   packet_length
 						   )
-	
-	mychoice = 1 #random()
-	additional_garbage = b"" if mychoice < 0.5 else generate_garbage_by_byte(byte_count=randrange(0x01, 0x10), add_length=False)
-	garbage_value = generate_large_garbage() + additional_garbage
 	parameter_dict = build_parameter_dictionary(pdu_id=pdu_id, current_tranid=tid)
 	packet = pdu_header + garbage_value
 	return parameter_dict, packet
