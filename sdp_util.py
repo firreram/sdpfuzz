@@ -1,11 +1,9 @@
-import sys, os, subprocess
-import json, datetime
+
 from scapy.all import *
 from scapy.packet import Packet
 from random import *
 from collections import OrderedDict
 import struct
-import uuid
 
 
 REQ_PDU_ID = {
@@ -152,7 +150,7 @@ def generate_garbage_by_byte(byte_count=4, add_length=True):
 	rand_garbage = 0x00
 	for _ in range(0,byte_count):
 		rand_garbage = randrange(0x00, 0x100)
-		garbage_value = garbage_value + struct(">B", rand_garbage)
+		garbage_value = garbage_value + struct.pack(">B", rand_garbage)
 	garbage_length = len(garbage_value)
 	garbage_value = (struct.pack(">B", garbage_length) if add_length else b"") + garbage_value
 	return garbage_value	
