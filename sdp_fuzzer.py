@@ -35,8 +35,7 @@ def send_sdp_packet(bt_addr, sock, packet, packet_type, process_resp=False):
 			response = sock.recv(4096)
 			packet_info["response_data"] = response.hex()
 		# else:
-		# 	sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
-		# 	sock.connect((bt_addr, 1))
+
 	except ConnectionResetError:
 		print("[-] Crash Found - ConnectionResetError detected")
 		if(l2ping(bt_addr) == False):
@@ -128,7 +127,9 @@ def send_sdp_packet(bt_addr, sock, packet, packet_type, process_resp=False):
 			packet_info["crash"] = "y"
 			packet_info["DoS"] = "y"
 			packet_info["crash_info"] = str(e)
-	
+
+	sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
+	sock.connect((bt_addr, 1))
 	return sock, packet_info, response
 
 def send_test_packet(bt_addr,logger):
