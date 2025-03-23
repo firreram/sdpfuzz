@@ -20,7 +20,7 @@ def send_sdp_packet(bt_addr, sock, packet, packet_type, process_resp=False):
 	packet_info = ""
 	response = b'\x00'
 	try:
-		#sock.connect((bt_addr, 1))
+		sock.connect((bt_addr, 1))
 		sock.send(packet)
 		packet_info = {}
 		packet_info["no"] = packet_count
@@ -127,9 +127,9 @@ def send_sdp_packet(bt_addr, sock, packet, packet_type, process_resp=False):
 			packet_info["crash"] = "y"
 			packet_info["DoS"] = "y"
 			packet_info["crash_info"] = str(e)
-
-	sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
-	sock.connect((bt_addr, 1))
+	if not process_resp:
+		sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
+		#sock.connect((bt_addr, 1))
 	return sock, packet_info, response
 
 def send_test_packet(bt_addr,logger):
@@ -174,7 +174,9 @@ def send_initial_sdp_service_search(bt_add, sock, logger):
 				if resp["handle_list"] is not None:
 					service_handle_list.extend(resp["handle_list"])
 	if len(service_handle_list) == 0: #in case no service handle
-		service_handle_list.append(b'\x10\x01')
+		srh = int.from_bytes(b'\x10\x01', byteorder="big")
+
+		service_handle_list.append(struct.pack(">I", srh))
 	service_handle_list = list(set(service_handle_list))
 
 	current_tranid = (current_tranid + 1) % 0x10000
@@ -349,7 +351,7 @@ def sdp_fuzzing(bt_addr, test_info):
 		print("Start Fuzzing... Please hit Ctrl + C to finish...")
 		try:
 			sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
-			sock.connect((bt_addr, 1))
+			#sock.connect((bt_addr, 1))
 			send_initial_sdp_service_search(bt_add=bt_addr, sock=sock, logger=logger)
 			while (1):
 				print("[+] Tested %d packets" % (packet_count))	

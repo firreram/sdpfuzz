@@ -295,6 +295,8 @@ def build_garbage_sdp_package(tid=0x0001, pdu_id=0x01):
 '''
 Function to generate standard SDP requests and parse SDP responses
 '''
+
+# function to build a valid service search request
 def build_sdp_search_request(tid=0x0001, max_record=10, uuid_list=[ASSIGNED_SERVICE_UUID["Service Discovery Server"]], continuation_state=b'\x00', to_fuzz=False):	
 	service_search_pattern = build_sdp_search_pattern(uuid_list, to_fuzz=to_fuzz)
 
@@ -312,25 +314,29 @@ def build_sdp_search_request(tid=0x0001, max_record=10, uuid_list=[ASSIGNED_SERV
 	packet = pdu_header + service_search_pattern + max_records + continuation
 	return parameter_dict, packet
 
+# function to build a valid service attr request
 def build_sdp_service_attr_request(tid=0x0001, service_record_handle=0x0001, max_attr_byte_count=0x0007, attribute_list=[{"attribute_id":0x0001, "isRange":False}],continuation_state=b'\x00', to_fuzz=False):
 	attribute_pattern = build_attribute_list_pattern(attribute_list, to_fuzz=to_fuzz)
 	
+	srh = int.from_bytes(service_record_handle, byteorder="big")
+
 	pdu_header = struct.pack(">BHHIH",
 							 0x04,
 							 tid,
 							 len(attribute_pattern) + 6 + len(continuation_state),
-							 service_record_handle,
+							 srh,
 							 max_attr_byte_count)
 	continuation = continuation_state
 	parameter_dict = build_parameter_dictionary(pdu_id=0x04, 
                                              current_tranid=tid, 
-                                             service_handle=service_record_handle,
+                                             service_handle=srh,
                                              attribute_ids=attribute_list,
                                              max_attr_byte_counts=max_attr_byte_count,
                                              continuation_state=continuation_state)
 	
 	return parameter_dict, pdu_header + attribute_pattern + continuation
 
+# function to build a valid service search attr request
 def build_sdp_service_search_attr_request(tid=0x0001, uuid_list=[ASSIGNED_SERVICE_UUID["Service Discovery Server"]],max_attr_byte_count=0x0007, attribute_list=[{"attribute_id":0x0001, "isRange":False}], continuation_state=b'\x00' , to_fuzz=False):
 	#1) build search pattern first
 	service_search_pattern = build_sdp_search_pattern(uuid_list, to_fuzz=to_fuzz)
@@ -403,6 +409,7 @@ def parse_sdp_service_attribute_response(response):
 	return ret_data
 	
 
+#parsing the response from the SDP server. For the purpose of fuzzing, we do not need to really read the attribute lists. But it is helpful to retrieve the continuation states.
 def parse_sdp_response(response):
 	# Basic response parsing
 	ret_data = {

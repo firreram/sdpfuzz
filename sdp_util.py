@@ -4,6 +4,10 @@ from random import *
 from collections import OrderedDict
 import struct
 
+'''
+This file contains the relevant enum dictionary for SDP requests and response. 
+It also provides a few helper functions to generate garbage values for fuzzing.
+'''
 
 REQ_PDU_ID = {
 	0x02 : "SDP_SERVICE_SEARCH_REQ",
