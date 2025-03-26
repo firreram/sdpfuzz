@@ -3,7 +3,7 @@ from scapy.packet import Packet
 from random import *
 from collections import OrderedDict
 import struct
-
+import uuid
 '''
 This file contains the relevant enum dictionary for SDP requests and response. 
 It also provides a few helper functions to generate garbage values for fuzzing.
@@ -205,3 +205,74 @@ def flip_bits_in_packet(packet, mutation_rate=0.05):
 			bit_to_flip = 1 << randint(0, 7)
 			packet_bytes[i] ^= bit_to_flip
 	return bytes(packet_bytes)
+
+#helper functions to fuzz the packet
+
+def generate_fixed_attribute_list1():
+	attr_list = []
+	min_attr_id = 0x0000
+	max_attr_id = 0xFFFF	
+	attr_dict = {"attribute_id": min_attr_id, "isRange": False}
+	attr_list.append(attr_dict)
+	attr_dict = {"attribute_id": ((min_attr_id+1)<<16) | (max_attr_id-1), "isRange": True}
+	attr_list.append(attr_dict)
+	attr_dict = {"attribute_id": max_attr_id, "isRange": False}
+	attr_list.append(attr_dict)
+	return attr_list
+
+def generate_attribute_list():
+	min_attr_id = 0x0000
+	max_attr_id = 0xFFFF
+	attr_list = []
+	current_attr_id = min_attr_id
+	while current_attr_id <= max_attr_id:
+		choice1 = random()
+		if choice1 < 0.5 or current_attr_id == max_attr_id:
+			attr_dict = {"attribute_id": current_attr_id, "isRange": False}
+			attr_list.append(attr_dict)
+			current_attr_id += 1
+		else:
+			upper_limit = randrange(current_attr_id+1, max_attr_id)
+			upper_limit = max(upper_limit, max_attr_id)
+			attribute_range = (current_attr_id << 16) | upper_limit
+			attr_dict = {"attribute_id": attribute_range, "isRange": True}
+			attr_list.append(attr_dict)
+			current_attr_id += 1
+	return attr_list
+
+def generate_fixed_uuid_list():
+	uuid_list = []
+	assigned_uuid_list_keys = list(ASSIGNED_SERVICE_UUID.keys())
+	randomized_list_keys = sample(assigned_uuid_list_keys, 12)
+	for key in randomized_list_keys:
+		uuid_list.append(ASSIGNED_SERVICE_UUID[key])
+
+	return uuid_list
+
+def generate_fixed_uuid_list1():
+	uuid_list = []
+	assigned_uuid_list_keys = list(ASSIGNED_SERVICE_UUID.keys())
+	max_length = min(len(assigned_uuid_list_keys), 12)
+	randomized_list_keys = assigned_uuid_list_keys[0:max_length]
+	for key in randomized_list_keys:
+		uuid_list.append(ASSIGNED_SERVICE_UUID[key])
+
+	return uuid_list   
+
+def generate_uuid_list():
+	list_range = randrange(0, 15)
+	uuid_list = []
+	if list_range > 0:
+		for _ in range(0, list_range):
+			my_choice = random()
+			if my_choice < 0.7: #use uuid from assigned list
+				rand_key = choice(list(ASSIGNED_SERVICE_UUID.keys()))
+				uuid_list.append(ASSIGNED_SERVICE_UUID[rand_key])
+			else: #random uuid
+				random_uuid = uuid.uuid4()
+				if my_choice < 0.9: #add base
+					uuid_list.append(str(random_uuid))
+				else:
+					uuid_list.append(str(random_uuid))
+	
+	return uuid_list

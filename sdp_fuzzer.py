@@ -13,7 +13,7 @@ packet_count = 0
 crash_count = 0
 service_handle_list = []
 fuzz_iteration = 5000
-
+continuation_state_list = []
 def send_sdp_packet(bt_addr, sock, packet, packet_type, process_resp=False):
 	global packet_count, crash_count
 	packet_count += 1
@@ -181,6 +181,27 @@ def send_initial_sdp_service_search(bt_add, sock, logger):
 
 	current_tranid = (current_tranid + 1) % 0x10000
 
+def send_initial_sdp_search_attr_req(bt_addr, sock, logger):
+	print("[+] Getting continuation states for service search attribute requests...")
+	global current_tranid	
+	current_tranid = (current_tranid + 1) % 0x10000
+	attr_list = generate_fixed_attribute_list1()
+	uuid_list = generate_fixed_uuid_list1()
+	max_attr_byte_count = 0xFF #for mutating known continuation state, we will fix the max attr byte
+	param_dict, packet = build_sdp_service_search_attr_request(tid=current_tranid, uuid_list=uuid_list, max_attr_byte_count=max_attr_byte_count, attribute_list=attr_list, continuation_state=b'\x00', to_fuzz=False)
+	sock, packet_info, response = send_sdp_packet(bt_addr=bt_addr, sock=sock, packet=packet, packet_type=0x06, process_resp=True)
+	if packet_info != "":
+		
+		packet_info["params"] = param_dict
+		packet_info["strategy"] = "Add garbage to UUID/Attribute List"
+		logger["packet"].append(packet_info)
+		resp = parse_sdp_response(response)
+		while resp["continuation_state"] != b'\x00':
+			continuation_state_list.append(resp["continuation_state"])
+			current_tranid = (current_tranid + 1) % 0x10000
+			param_dict, packet = build_sdp_service_search_attr_request(tid=current_tranid, uuid_list=uuid_list, max_attr_byte_count=max_attr_byte_count, attribute_list=attr_list, continuation_state=resp["continuation_state"], to_fuzz=False)
+			sock, packet_info, response = send_sdp_packet(bt_addr=bt_addr, sock=sock, packet=packet, packet_type=0x06, process_resp=True)
+			resp = parse_sdp_response(response)
 
 def fuzz_sdp_full_garbage(bt_addr, sock, logger):
 	print("[+] Fuzzing SDP (Full Garbage Packets)")
@@ -196,6 +217,8 @@ def fuzz_sdp_full_garbage(bt_addr, sock, logger):
 			packet_info["params"] = param_dict
 			packet_info["strategy"] = strategy
 			logger["packet"].append(packet_info)
+
+
 
 def fuzz_sdp_service_search_attr_garbage_list(bt_addr, sock, logger):
 	print("[+] Fuzzing SDP Service Search Attributes (Add garbage to lists)")
@@ -226,6 +249,44 @@ def fuzz_sdp_service_search_attr_garbage_list(bt_addr, sock, logger):
 				resp = parse_sdp_response(response)
 		else:
 			print("Nothing for Service Search Attributes?")
+
+def fuzz_sdp_service_search_attr_mutate_continuation_state(bt_addr, sock, logger):
+	print("[+] Fuzzing SDP Service Search Attributes (Mutate known continuation states)")
+	global current_tranid
+	current_tranid = (current_tranid + 1) % 0x10000
+	continuation_state = choice(continuation_state_list)
+	content_length = len(continuation_state) - 1
+	rand_index = randrange(1, content_length)
+	attr_list = generate_fixed_attribute_list1()
+	uuid_list = generate_fixed_uuid_list1()
+	max_attr_byte_count = 0xFF #for mutating known continuation state, we will fix the max attr byte
+	for i in range(0x00, 0x100):
+		continuation_state[rand_index] = struct.pack(">B", i)
+		param_dict, packet = build_sdp_service_search_attr_request(tid=current_tranid, uuid_list=uuid_list, max_attr_byte_count=max_attr_byte_count, attribute_list=attr_list, continuation_state=continuation_state, to_fuzz=False)
+		sock, packet_info, response = send_sdp_packet(bt_addr=bt_addr, sock=sock, packet=packet, packet_type=0x06, process_resp=True)
+		if packet_info != "":
+			
+			packet_info["params"] = param_dict
+			packet_info["strategy"] = "Mutate known continuation state"
+			logger["packet"].append(packet_info)
+
+
+			resp = parse_sdp_response(response)
+			while resp["continuation_state"] != b'\x00':
+				current_cont_state = resp["continuation_state"]
+				current_cont_state = current_cont_state + generate_garbage_by_byte(byte_count=randrange(0x00, 0x10), add_length=False)
+				param_dict, packet = build_sdp_service_search_attr_request(tid=current_tranid, uuid_list=uuid_list, max_attr_byte_count=max_attr_byte_count, attribute_list=attr_list, continuation_state=current_cont_state, to_fuzz=False)
+				sock, packet_info, response = send_sdp_packet(bt_addr=bt_addr, sock=sock, packet=packet, packet_type=0x06, process_resp=True)
+				if packet_info != "":
+					
+					packet_info["params"] = param_dict
+					packet_info["strategy"] = "Mutate known continuation state"
+					logger["packet"].append(packet_info)
+				resp = parse_sdp_response(response)
+		else:
+			print("Nothing for Service Search Attributes?")
+
+  
 
 def fuzz_sdp_service_search_attr_garbage_continuation_state(bt_addr, sock, logger):
 	print("[+] Fuzzing SDP Service Search Attributes (Add garbage to continuation state)")
@@ -337,6 +398,7 @@ def fuzz_sdp_service_search_garbage_continuation_state(bt_addr, sock, logger):
 			print("Nothing for Service Search?")
 
 
+
 def sdp_fuzzing(bt_addr, test_info):
 	global current_tranid
 	global packet_count
@@ -353,6 +415,7 @@ def sdp_fuzzing(bt_addr, test_info):
 			sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
 			#sock.connect((bt_addr, 1))
 			send_initial_sdp_service_search(bt_add=bt_addr, sock=sock, logger=logger)
+			send_initial_sdp_search_attr_req(bt_addr=bt_addr, sock=sock, logger=logger)
 			while (1):
 				print("[+] Tested %d packets" % (packet_count))	
 				if(len(logger['packet']) > 200000):
@@ -361,7 +424,9 @@ def sdp_fuzzing(bt_addr, test_info):
 				if ConfigManager.get_random_fuzzing():
 					fuzz_sdp_full_garbage(bt_addr=bt_addr, sock=sock, logger=logger)
 					
-    
+				if len(continuation_state_list) > 0:
+					fuzz_sdp_service_search_attr_mutate_continuation_state(bt_addr=bt_addr, sock=sock, logger=logger)
+     
 				fuzz_sdp_service_search_garbage_list(bt_addr=bt_addr, sock=sock, logger=logger)
 				fuzz_sdp_service_search_garbage_continuation_state(bt_addr=bt_addr, sock=sock, logger=logger)
     
