@@ -259,18 +259,18 @@ def build_sdp_search_request(tid=0x0001, max_record=10, uuid_list=[ASSIGNED_SERV
 def build_sdp_service_attr_request(tid=0x0001, service_record_handle=0x0001, max_attr_byte_count=0x0007, attribute_list=[{"attribute_id":0x0001, "isRange":False}],continuation_state=b'\x00', to_fuzz=False):
 	attribute_pattern = build_attribute_list_pattern(attribute_list, to_fuzz=to_fuzz)
 	
-	srh = int.from_bytes(service_record_handle, byteorder="big")
+	#srh = int.from_bytes(service_record_handle, byteorder="big")
 
 	pdu_header = struct.pack(">BHHIH",
 							 0x04,
 							 tid,
 							 len(attribute_pattern) + 6 + len(continuation_state),
-							 srh,
+							 service_record_handle,
 							 max_attr_byte_count)
 	continuation = continuation_state
 	parameter_dict = build_parameter_dictionary(pdu_id=0x04, 
                                              current_tranid=tid, 
-                                             service_handle=srh,
+                                             service_handle=service_record_handle,
                                              attribute_ids=attribute_list,
                                              max_attr_byte_counts=max_attr_byte_count,
                                              continuation_state=continuation_state)
