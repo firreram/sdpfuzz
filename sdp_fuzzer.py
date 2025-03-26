@@ -20,7 +20,7 @@ def send_sdp_packet(bt_addr, sock, packet, packet_type, process_resp=False):
 	packet_info = ""
 	response = b'\x00'
 	try:
-		sock.connect((bt_addr, 1))
+		#sock.connect((bt_addr, 1))
 		sock.send(packet)
 		packet_info = {}
 		packet_info["no"] = packet_count
@@ -127,9 +127,9 @@ def send_sdp_packet(bt_addr, sock, packet, packet_type, process_resp=False):
 			packet_info["crash"] = "y"
 			packet_info["DoS"] = "y"
 			packet_info["crash_info"] = str(e)
-	if not process_resp:
+	
 		sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
-		#sock.connect((bt_addr, 1))
+		sock.connect((bt_addr, 1))
 	return sock, packet_info, response
 
 def send_test_packet(bt_addr,logger):
@@ -178,7 +178,6 @@ def send_initial_sdp_service_search(bt_add, sock, logger):
 
 		service_handle_list.append(struct.pack(">I", srh))
 	service_handle_list = list(set(service_handle_list))
-
 	current_tranid = (current_tranid + 1) % 0x10000
 
 def send_initial_sdp_search_attr_req(bt_addr, sock, logger):
@@ -202,7 +201,7 @@ def send_initial_sdp_search_attr_req(bt_addr, sock, logger):
 			param_dict, packet = build_sdp_service_search_attr_request(tid=current_tranid, uuid_list=uuid_list, max_attr_byte_count=max_attr_byte_count, attribute_list=attr_list, continuation_state=resp["continuation_state"], to_fuzz=False)
 			sock, packet_info, response = send_sdp_packet(bt_addr=bt_addr, sock=sock, packet=packet, packet_type=0x06, process_resp=True)
 			resp = parse_sdp_response(response)
-
+ 
 def fuzz_sdp_full_garbage(bt_addr, sock, logger):
 	print("[+] Fuzzing SDP (Full Garbage Packets)")
 	global current_tranid
@@ -259,9 +258,13 @@ def fuzz_sdp_service_search_attr_mutate_continuation_state(bt_addr, sock, logger
 	rand_index = randrange(1, content_length)
 	attr_list = generate_fixed_attribute_list1()
 	uuid_list = generate_fixed_uuid_list1()
+	continuation_state_lhs = continuation_state[0:rand_index]
+ 
+	continuation_state_rhs = continuation_state[rand_index+1:]
 	max_attr_byte_count = 0xFF #for mutating known continuation state, we will fix the max attr byte
 	for i in range(0x00, 0x100):
-		continuation_state[rand_index] = struct.pack(">B", i)
+		mutated_field = struct.pack(">B", i)
+		continuation_state = continuation_state_lhs + mutated_field + continuation_state_rhs
 		param_dict, packet = build_sdp_service_search_attr_request(tid=current_tranid, uuid_list=uuid_list, max_attr_byte_count=max_attr_byte_count, attribute_list=attr_list, continuation_state=continuation_state, to_fuzz=False)
 		sock, packet_info, response = send_sdp_packet(bt_addr=bt_addr, sock=sock, packet=packet, packet_type=0x06, process_resp=True)
 		if packet_info != "":
@@ -413,7 +416,7 @@ def sdp_fuzzing(bt_addr, test_info):
 		print("Start Fuzzing... Please hit Ctrl + C to finish...")
 		try:
 			sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
-			#sock.connect((bt_addr, 1))
+			sock.connect((bt_addr, 1))
 			send_initial_sdp_service_search(bt_add=bt_addr, sock=sock, logger=logger)
 			send_initial_sdp_search_attr_req(bt_addr=bt_addr, sock=sock, logger=logger)
 			while (1):
@@ -437,7 +440,7 @@ def sdp_fuzzing(bt_addr, test_info):
 				fuzz_sdp_service_search_attr_garbage_continuation_state(bt_addr=bt_addr, sock=sock, logger=logger)
 
 				#send_test_packet(bt_addr=bt_addr, logger=logger)
-				#break
+			# 	#break
 				
 		except Exception as e:
 			print("[!] Error Message :", e)

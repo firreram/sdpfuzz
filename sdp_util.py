@@ -250,12 +250,7 @@ def generate_fixed_uuid_list():
 	return uuid_list
 
 def generate_fixed_uuid_list1():
-	uuid_list = []
-	assigned_uuid_list_keys = list(ASSIGNED_SERVICE_UUID.keys())
-	max_length = min(len(assigned_uuid_list_keys), 12)
-	randomized_list_keys = assigned_uuid_list_keys[0:max_length]
-	for key in randomized_list_keys:
-		uuid_list.append(ASSIGNED_SERVICE_UUID[key])
+	uuid_list = [ASSIGNED_SERVICE_UUID["Public Browse Group"]]
 
 	return uuid_list   
 
