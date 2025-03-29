@@ -176,11 +176,12 @@ def generate_garbage(add_length=True):
 	garbage_value = (struct.pack(">B", garbage_length) if add_length else b"") + garbage_value
 	return garbage_value
 
-def generate_large_garbage(add_length=True):
+def generate_large_garbage(add_length=True, inflat_length=False):
 	rand_garbage_1 = randrange(0x0000000000000000, 0x10000000000000000)
 	rand_garbage_2 = randrange(0x0000000000000000, 0x10000000000000000)
 	garbage_value = struct.pack(">Q", rand_garbage_1) + struct.pack(">Q", rand_garbage_2)
 	garbage_length = len(garbage_value)
+	garbage_length = (garbage_length + randrange(1,0x10)) if inflat_length else garbage_length
 	garbage_value = (struct.pack(">B", garbage_length) if add_length else b"") + garbage_value
 	return garbage_value
 

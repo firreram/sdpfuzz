@@ -249,6 +249,44 @@ def fuzz_sdp_service_search_attr_garbage_list(bt_addr, sock, logger):
 		else:
 			print("Nothing for Service Search Attributes?")
 
+def fuzz_sdp_service_search_attr_mutate_continuation_state_length(bt_addr, sock, logger): 
+	print("[+] Fuzzing SDP Service Search Attributes (Mutate length of known continuation states)")
+	global current_tranid
+	current_tranid = (current_tranid + 1) % 0x10000
+
+	max_attr_byte_count = 0xFF #for mutating known continuation state, we will fix the max attr byte
+	for _ in range(0, fuzz_iteration):
+		attr_list = generate_fixed_attribute_list1()
+		uuid_list = generate_fixed_uuid_list1()
+		old_continuation_state = choice(continuation_state_list)
+		content_length = len(old_continuation_state) - 1
+		new_content_length = content_length + randrange(1,0x10)
+		continuation_state = struct.pack(">B", new_content_length) + old_continuation_state[1:]
+		param_dict, packet = build_sdp_service_search_attr_request(tid=current_tranid, uuid_list=uuid_list, max_attr_byte_count=max_attr_byte_count, attribute_list=attr_list, continuation_state=continuation_state, to_fuzz=False)
+		sock, packet_info, response = send_sdp_packet(bt_addr=bt_addr, sock=sock, packet=packet, packet_type=0x06, process_resp=True)
+		if packet_info != "":
+			
+			packet_info["params"] = param_dict
+			packet_info["strategy"] = "Mutate length known continuation state"
+			logger["packet"].append(packet_info)
+
+
+			resp = parse_sdp_response(response)
+			while resp["continuation_state"] != b'\x00':
+				current_cont_state = resp["continuation_state"]
+				current_cont_state = current_cont_state + generate_garbage_by_byte(byte_count=randrange(0x00, 0x10), add_length=False)
+				param_dict, packet = build_sdp_service_search_attr_request(tid=current_tranid, uuid_list=uuid_list, max_attr_byte_count=max_attr_byte_count, attribute_list=attr_list, continuation_state=current_cont_state, to_fuzz=False)
+				sock, packet_info, response = send_sdp_packet(bt_addr=bt_addr, sock=sock, packet=packet, packet_type=0x06, process_resp=True)
+				if packet_info != "":
+					
+					packet_info["params"] = param_dict
+					packet_info["strategy"] = "Mutate length known continuation state"
+					logger["packet"].append(packet_info)
+				resp = parse_sdp_response(response)
+		else:
+			print("Nothing for Service Search Attributes?")	
+
+
 def fuzz_sdp_service_search_attr_mutate_continuation_state(bt_addr, sock, logger):
 	print("[+] Fuzzing SDP Service Search Attributes (Mutate known continuation states)")
 	global current_tranid
@@ -289,7 +327,6 @@ def fuzz_sdp_service_search_attr_mutate_continuation_state(bt_addr, sock, logger
 		else:
 			print("Nothing for Service Search Attributes?")
 
-  
 
 def fuzz_sdp_service_search_attr_garbage_continuation_state(bt_addr, sock, logger):
 	print("[+] Fuzzing SDP Service Search Attributes (Add garbage to continuation state)")
@@ -426,18 +463,23 @@ def sdp_fuzzing(bt_addr, test_info):
 				
 				if ConfigManager.get_random_fuzzing():
 					fuzz_sdp_full_garbage(bt_addr=bt_addr, sock=sock, logger=logger)
-					
+				
+				print('[+] FUZZING CONTINUATION STATES')
 				if len(continuation_state_list) > 0:
 					fuzz_sdp_service_search_attr_mutate_continuation_state(bt_addr=bt_addr, sock=sock, logger=logger)
-     
-				fuzz_sdp_service_search_garbage_list(bt_addr=bt_addr, sock=sock, logger=logger)
+					fuzz_sdp_service_search_attr_mutate_continuation_state_length(bt_addr=bt_addr, sock=sock, logger=logger)
+
 				fuzz_sdp_service_search_garbage_continuation_state(bt_addr=bt_addr, sock=sock, logger=logger)
-    
-				fuzz_sdp_service_attr_garbage_list(bt_addr=bt_addr, sock=sock, logger=logger)
 				fuzz_sdp_service_attr_garbage_continuation_state(bt_addr=bt_addr, sock=sock, logger=logger)
-    
-				fuzz_sdp_service_search_attr_garbage_list(bt_addr=bt_addr, sock=sock, logger=logger)
 				fuzz_sdp_service_search_attr_garbage_continuation_state(bt_addr=bt_addr, sock=sock, logger=logger)
+
+				if ConfigManager.get_to_fuzz_garbage_list():
+					print('[+] FUZZING GARBAGE LISTS')
+					fuzz_sdp_service_search_garbage_list(bt_addr=bt_addr, sock=sock, logger=logger)
+		
+					fuzz_sdp_service_attr_garbage_list(bt_addr=bt_addr, sock=sock, logger=logger)
+		
+					fuzz_sdp_service_search_attr_garbage_list(bt_addr=bt_addr, sock=sock, logger=logger)
 
 				#send_test_packet(bt_addr=bt_addr, logger=logger)
 			# 	#break
