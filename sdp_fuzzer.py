@@ -290,18 +290,21 @@ def fuzz_sdp_service_search_attr_mutate_continuation_state_length(bt_addr, sock,
 def fuzz_sdp_service_search_attr_mutate_continuation_state(bt_addr, sock, logger):
 	print("[+] Fuzzing SDP Service Search Attributes (Mutate known continuation states)")
 	global current_tranid
+	global fuzz_iteration
 	current_tranid = (current_tranid + 1) % 0x10000
-	continuation_state = choice(continuation_state_list)
-	content_length = len(continuation_state) - 1
-	rand_index = randrange(1, content_length)
+
 	attr_list = generate_fixed_attribute_list1()
 	uuid_list = generate_fixed_uuid_list1()
-	continuation_state_lhs = continuation_state[0:rand_index]
- 
-	continuation_state_rhs = continuation_state[rand_index+1:]
+
 	max_attr_byte_count = 0xFF #for mutating known continuation state, we will fix the max attr byte
-	for i in range(0x00, 0x100):
-		mutated_field = struct.pack(">B", i)
+	for _ in range(0, fuzz_iteration):
+		continuation_state = choice(continuation_state_list)
+		content_length = len(continuation_state) - 1
+		rand_index = randrange(1, content_length)
+		continuation_state_lhs = continuation_state[0:rand_index]
+	
+		continuation_state_rhs = continuation_state[rand_index+1:]
+		mutated_field = generate_garbage_by_byte(byte_count=1, add_length=False)
 		continuation_state = continuation_state_lhs + mutated_field + continuation_state_rhs
 		param_dict, packet = build_sdp_service_search_attr_request(tid=current_tranid, uuid_list=uuid_list, max_attr_byte_count=max_attr_byte_count, attribute_list=attr_list, continuation_state=continuation_state, to_fuzz=False)
 		sock, packet_info, response = send_sdp_packet(bt_addr=bt_addr, sock=sock, packet=packet, packet_type=0x06, process_resp=True)
