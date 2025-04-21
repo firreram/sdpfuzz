@@ -32,7 +32,10 @@ ERROR_RSP_CODE = {
 	0x0006: "Insufficient Resources to satisfy Request"
 }
 
+
 ASSIGNED_SERVICE_UUID = {
+    "Service Discovery Protocol": "00000001-0000-1000-8000-00805f9b34fb",
+	"L2CAP": "00000100-0000-1000-8000-00805f9b34fb",	
 	"Service Discovery Server": "00001000-0000-1000-8000-00805f9b34fb",
 	"Browse Group Descriptor": "00001001-0000-1000-8000-00805f9b34fb",
 	"Public Browse Group": "00001002-0000-1000-8000-00805f9b34fb",
@@ -241,10 +244,10 @@ def generate_attribute_list():
 			current_attr_id += 1
 	return attr_list
 
-def generate_fixed_uuid_list():
+def generate_fixed_uuid_list(list_size=1):
 	uuid_list = []
 	assigned_uuid_list_keys = list(ASSIGNED_SERVICE_UUID.keys())
-	randomized_list_keys = sample(assigned_uuid_list_keys, 12)
+	randomized_list_keys = sample(assigned_uuid_list_keys, list_size)
 	for key in randomized_list_keys:
 		uuid_list.append(ASSIGNED_SERVICE_UUID[key])
 
@@ -272,3 +275,8 @@ def generate_uuid_list():
 					uuid_list.append(str(random_uuid))
 	
 	return uuid_list
+
+def log_packet(logger, packet_info):
+	logger["packet"].append(packet_info)
+	if "crash" in packet_info and packet_info["crash"] == "y":
+		raise Exception(f"SDFPFuzz has crashed: {packet_info["crash_info"]}")

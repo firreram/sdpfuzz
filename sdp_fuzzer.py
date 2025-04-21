@@ -144,7 +144,7 @@ def send_test_packet(bt_addr,logger):
 	
 	if packet_info != "":
 		packet_info["params"] = param_dict
-		logger["packet"].append(packet_info)
+		log_packet(logger, packet_info)
 
 
 
@@ -156,7 +156,7 @@ def send_test_packet(bt_addr,logger):
 		
 		if packet_info != "":
 			packet_info["param_dict"] = param_dict
-			logger["packet"].append(packet_info)
+			log_packet(logger, packet_info)
 
 
 def send_initial_sdp_service_search(bt_add, sock, logger):
@@ -168,7 +168,7 @@ def send_initial_sdp_service_search(bt_add, sock, logger):
 		sock, packet_info, response = send_sdp_packet(bt_addr=bt_add, sock=sock, packet=packet, packet_type=0x02, process_resp=True)
 		if packet_info != "":
 			packet_info["params"] = param_dict
-			logger["packet"].append(packet_info)
+			log_packet(logger, packet_info)
 			if response != b'\x00':
 				resp = parse_sdp_response(response)
 				if resp["handle_list"] is not None:
@@ -193,7 +193,7 @@ def send_initial_sdp_search_attr_req(bt_addr, sock, logger):
 		
 		packet_info["params"] = param_dict
 		packet_info["strategy"] = "Add garbage to UUID/Attribute List"
-		logger["packet"].append(packet_info)
+		log_packet(logger, packet_info)
 		resp = parse_sdp_response(response)
 		while resp["continuation_state"] != b'\x00':
 			continuation_state_list.append(resp["continuation_state"])
@@ -215,7 +215,7 @@ def fuzz_sdp_full_garbage(bt_addr, sock, logger):
 		if packet_info != "":
 			packet_info["params"] = param_dict
 			packet_info["strategy"] = strategy
-			logger["packet"].append(packet_info)
+			log_packet(logger, packet_info)
 
 
 
@@ -234,7 +234,7 @@ def fuzz_sdp_service_search_attr_garbage_list(bt_addr, sock, logger):
 			
 			packet_info["params"] = param_dict
 			packet_info["strategy"] = "Add garbage to UUID/Attribute List"
-			logger["packet"].append(packet_info)
+			log_packet(logger, packet_info)
 			resp = parse_sdp_response(response)
 			while resp["continuation_state"] != b'\x00':
 				current_tranid = (current_tranid + 1) % 0x10000
@@ -244,7 +244,7 @@ def fuzz_sdp_service_search_attr_garbage_list(bt_addr, sock, logger):
 					
 					packet_info["params"] = param_dict
 					packet_info["strategy"] = "Add garbage to UUID/Attribute List"
-					logger["packet"].append(packet_info)
+					log_packet(logger, packet_info)
 				resp = parse_sdp_response(response)
 		else:
 			print("Nothing for Service Search Attributes?")
@@ -268,7 +268,7 @@ def fuzz_sdp_service_search_attr_mutate_continuation_state_length(bt_addr, sock,
 			
 			packet_info["params"] = param_dict
 			packet_info["strategy"] = "Mutate length known continuation state"
-			logger["packet"].append(packet_info)
+			log_packet(logger, packet_info)
 
 
 			resp = parse_sdp_response(response)
@@ -281,7 +281,7 @@ def fuzz_sdp_service_search_attr_mutate_continuation_state_length(bt_addr, sock,
 					
 					packet_info["params"] = param_dict
 					packet_info["strategy"] = "Mutate length known continuation state"
-					logger["packet"].append(packet_info)
+					log_packet(logger, packet_info)
 				resp = parse_sdp_response(response)
 		else:
 			print("Nothing for Service Search Attributes?")	
@@ -312,7 +312,7 @@ def fuzz_sdp_service_search_attr_mutate_continuation_state(bt_addr, sock, logger
 			
 			packet_info["params"] = param_dict
 			packet_info["strategy"] = "Mutate known continuation state"
-			logger["packet"].append(packet_info)
+			log_packet(logger, packet_info)
 
 
 			resp = parse_sdp_response(response)
@@ -325,7 +325,7 @@ def fuzz_sdp_service_search_attr_mutate_continuation_state(bt_addr, sock, logger
 					
 					packet_info["params"] = param_dict
 					packet_info["strategy"] = "Mutate known continuation state"
-					logger["packet"].append(packet_info)
+					log_packet(logger, packet_info)
 				resp = parse_sdp_response(response)
 		else:
 			print("Nothing for Service Search Attributes?")
@@ -347,7 +347,7 @@ def fuzz_sdp_service_search_attr_garbage_continuation_state(bt_addr, sock, logge
 			
 			packet_info["params"] = param_dict
 			packet_info["strategy"] = "Add garbage to continuation state"
-			logger["packet"].append(packet_info)
+			log_packet(logger, packet_info)
 
 
 			resp = parse_sdp_response(response)
@@ -360,7 +360,7 @@ def fuzz_sdp_service_search_attr_garbage_continuation_state(bt_addr, sock, logge
 					
 					packet_info["params"] = param_dict
 					packet_info["strategy"] = "Add garbage to continuation state"
-					logger["packet"].append(packet_info)
+					log_packet(logger, packet_info)
 				resp = parse_sdp_response(response)
 		else:
 			print("Nothing for Service Search Attributes?")
@@ -381,7 +381,7 @@ def fuzz_sdp_service_attr_garbage_list(bt_addr, sock, logger):
 			
 			packet_info["param_dict"] = param_dict
 			packet_info["strategy"] = "Add garbage to UUID/Attribute List"
-			logger["packet"].append(packet_info)
+			log_packet(logger, packet_info)
 		else:
 			print("Nothing for Service Attributes?")
 
@@ -401,7 +401,7 @@ def fuzz_sdp_service_attr_garbage_continuation_state(bt_addr, sock, logger):
 			
 			packet_info["param_dict"] = param_dict
 			packet_info["strategy"] = "Add garbage to continuation state"
-			logger["packet"].append(packet_info)
+			log_packet(logger, packet_info)
 		else:
 			print("Nothing for Service Attributes?")
 
@@ -418,7 +418,7 @@ def fuzz_sdp_service_search_garbage_list(bt_addr, sock, logger):
 			
 			packet_info["param_dict"] = param_dict
 			packet_info["strategy"] = "Add garbage to UUID/Attribute List"
-			logger["packet"].append(packet_info)
+			log_packet(logger, packet_info)
 		else:
 			print("Nothing for Service Search?")
 
@@ -436,7 +436,7 @@ def fuzz_sdp_service_search_garbage_continuation_state(bt_addr, sock, logger):
 			
 			packet_info["param_dict"] = param_dict
 			packet_info["strategy"] = "Add garbage to continuation state"
-			logger["packet"].append(packet_info)
+			log_packet(logger, packet_info)
 		else:
 			print("Nothing for Service Search?")
 

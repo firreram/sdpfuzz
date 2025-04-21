@@ -29,6 +29,7 @@ class ConfigManager:
 		print(f'Restart Bluetooth: {ConfigManager._restart_bluetooth}')
 		print(f'Random Fuzzing: {ConfigManager._random_fuzzing}')
 		print(f'_scan_duration: {ConfigManager._scan_duration}')
+		print(f'Fuzz Garbage List: {ConfigManager._garbage_list}')
 	@staticmethod
 	def get_fuzz_iteration():
 		return ConfigManager._fuzz_iteration
