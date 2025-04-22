@@ -35,7 +35,8 @@ def send_sdp_packet(bt_addr, sock, packet, packet_type, process_resp=False):
 			response = sock.recv(4096)
 			packet_info["response_data"] = response.hex()
 		# else:
-
+		sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
+		sock.connect((bt_addr, 1))
 	except ConnectionResetError:
 		print("[-] Crash Found - ConnectionResetError detected")
 		if(l2ping(bt_addr) == False):
@@ -128,8 +129,7 @@ def send_sdp_packet(bt_addr, sock, packet, packet_type, process_resp=False):
 			packet_info["DoS"] = "y"
 			packet_info["crash_info"] = str(e)
 	
-		sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
-		sock.connect((bt_addr, 1))
+
 	return sock, packet_info, response
 
 def send_test_packet(bt_addr,logger):
@@ -192,7 +192,7 @@ def send_initial_sdp_search_attr_req(bt_addr, sock, logger):
 	if packet_info != "":
 		
 		packet_info["params"] = param_dict
-		packet_info["strategy"] = "Add garbage to UUID/Attribute List"
+		packet_info["strategy"] = "Getting Continuation States"
 		log_packet(logger, packet_info)
 		resp = parse_sdp_response(response)
 		while resp["continuation_state"] != b'\x00':
@@ -201,6 +201,7 @@ def send_initial_sdp_search_attr_req(bt_addr, sock, logger):
 			param_dict, packet = build_sdp_service_search_attr_request(tid=current_tranid, uuid_list=uuid_list, max_attr_byte_count=max_attr_byte_count, attribute_list=attr_list, continuation_state=resp["continuation_state"], to_fuzz=False)
 			sock, packet_info, response = send_sdp_packet(bt_addr=bt_addr, sock=sock, packet=packet, packet_type=0x06, process_resp=True)
 			resp = parse_sdp_response(response)
+	print(f"[+] Valid Continuation States: {continuation_state_list}")
  
 def fuzz_sdp_full_garbage(bt_addr, sock, logger):
 	print("[+] Fuzzing SDP (Full Garbage Packets)")
