@@ -34,9 +34,12 @@ def send_sdp_packet(bt_addr, sock, packet, packet_type, process_resp=False):
 		if process_resp:
 			response = sock.recv(4096)
 			packet_info["response_data"] = response.hex()
-		# else:
-		sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
-		sock.connect((bt_addr, 1))
+		#else:
+		# print("Closing socket")
+		# sock.close()
+		# sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
+		# sock.connect((bt_addr, 1))
+		# print("New socket connected")
 	except ConnectionResetError:
 		print("[-] Crash Found - ConnectionResetError detected")
 		if(l2ping(bt_addr) == False):
@@ -179,9 +182,11 @@ def send_initial_sdp_service_search(bt_add, sock, logger):
 		service_handle_list.append(struct.pack(">I", srh))
 	service_handle_list = list(set(service_handle_list))
 	current_tranid = (current_tranid + 1) % 0x10000
+	print(f"Service record handles: {service_handle_list}")
 
 def send_initial_sdp_search_attr_req(bt_addr, sock, logger):
 	print("[+] Getting continuation states for service search attribute requests...")
+	print(f"[+] Initial Continuation States: {continuation_state_list}")
 	global current_tranid	
 	current_tranid = (current_tranid + 1) % 0x10000
 	attr_list = generate_fixed_attribute_list1()
@@ -196,6 +201,7 @@ def send_initial_sdp_search_attr_req(bt_addr, sock, logger):
 		log_packet(logger, packet_info)
 		resp = parse_sdp_response(response)
 		while resp["continuation_state"] != b'\x00':
+			print(f"Received continuation state: {resp["continuation_state"]}")
 			continuation_state_list.append(resp["continuation_state"])
 			current_tranid = (current_tranid + 1) % 0x10000
 			param_dict, packet = build_sdp_service_search_attr_request(tid=current_tranid, uuid_list=uuid_list, max_attr_byte_count=max_attr_byte_count, attribute_list=attr_list, continuation_state=resp["continuation_state"], to_fuzz=False)
