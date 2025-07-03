@@ -1,2 +1,4 @@
 *.wfl
 *.pyc
+venv/
+__pycache__/

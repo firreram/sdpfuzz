@@ -278,5 +278,7 @@ def generate_uuid_list():
 
 def log_packet(logger, packet_info):
 	logger["packet"].append(packet_info)
+	'''
 	if "crash" in packet_info and packet_info["crash"] == "y":
-		raise Exception(f"SDFPFuzz has crashed: {packet_info["crash_info"]}")
+		raise Exception(f"SDFPFuzz has crashed: {packet_info['crash_info']}")
+	'''

@@ -1,5 +1,4 @@
 #!/bin/bash
 
 git pull
-
-sudo python3 l2fuzz.py
+/home/seclab/Desktop/sdpfuzz/venv/bin/python3 l2fuzz.py

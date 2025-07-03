@@ -6,7 +6,9 @@ from random import *
 from collections import OrderedDict
 from sdp_packet import *
 from sdp_util import *
+from pi_interface import send_char_to_pi
 import traceback
+import time
 from config import ConfigManager
 current_tranid = 0x0001
 packet_count = 0
@@ -14,32 +16,100 @@ crash_count = 0
 service_handle_list = []
 fuzz_iteration = 5000
 continuation_state_list = []
+
 def send_sdp_packet(bt_addr, sock, packet, packet_type, process_resp=False):
+	retries = 3
 	global packet_count, crash_count
+	time.sleep(0.1)  # Sleep to avoid flooding the socket
 	packet_count += 1
 	packet_info = ""
 	response = b'\x00'
-	try:
-		#sock.connect((bt_addr, 1))
-		sock.send(packet)
-		packet_info = {}
-		packet_info["no"] = packet_count
-		packet_info["protocol"] = "SDP"
-		packet_info["sent_time"] = str(datetime.now())
-		packet_info["packet_type"] = packet_type
-		packet_info["raw_packet"] = packet.hex()
-		packet_info["crash"] = "n"
-		packet_info["sended?"] = "y"	
-		
-		if process_resp:
-			response = sock.recv(4096)
-			packet_info["response_data"] = response.hex()
-		#else:
-		# print("Closing socket")
-		# sock.close()
-		# sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
-		# sock.connect((bt_addr, 1))
-		# print("New socket connected")
+	while retries > 0:
+		try:
+				#sock.connect((bt_addr, 1))
+			sock.send(packet)
+			print(f"[+] Packet {packet_count} sent: {packet.hex()}")
+			packet_info = {}
+			packet_info["no"] = packet_count
+			packet_info["protocol"] = "SDP"
+			packet_info["sent_time"] = str(datetime.now())
+			packet_info["packet_type"] = packet_type
+			packet_info["raw_packet"] = packet.hex()
+			packet_info["crash"] = "n"
+			packet_info["sended?"] = "y"	
+
+			if process_resp:
+				response = sock.recv(4096)
+				packet_info["response_data"] = response.hex()
+				#else:
+				# print("Closing socket")
+				# sock.close()
+				# sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
+				# sock.connect((bt_addr, 1))
+				# print("New socket connected")
+			break
+
+		except bluetooth.BluetoothError as e:
+			crash_count += 1
+			print("[!] Bluetooth Error :", e)
+			packet_info = {}
+			packet_info["no"] = packet_count
+			packet_info["protocol"] = "SDP"
+			packet_info["sent_time"] = str(datetime.now())
+			packet_info["packet_type"] = packet_type
+			packet_info["raw_packet"] = packet.hex()
+			packet_info["crash"] = "y"
+			packet_info["sended?"] = "n"
+			packet_info["crash_info"] = str(e)
+			while retries > 0:
+				print(f"Retrying... {retries} attempts left")
+				if sock is not None:
+					sock.close()  # Close the old socket
+				sock = None
+				time.sleep(1)
+				try:
+					sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
+					sock.connect((bt_addr, 1))
+				except bluetooth.BluetoothError as e:
+					print(f"Failed to reconnect: {e}")
+					sock = None
+
+				if sock is not None:
+					print("Socket reconnected successfully.")
+					retries = 3
+					break
+				retries -= 1
+				time.sleep(1)
+			if retries == 0:
+				#try final l2ping test
+				print("Max retries reached. Attempting to ping the device...")
+				if l2ping(bt_addr):
+					print("Device is still reachable, continuing fuzzing...")
+					try:
+						sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
+						sock.connect((bt_addr, 1))
+						retries = 3
+					except bluetooth.BluetoothError as e:
+						print(f"Failed to reconnect after ping: {e}")
+				else:
+					print("Ping failed. Trying wake-up.")
+					if send_char_to_pi('a'):
+						print("Wake-up device found, attempting to reconnect...")
+						time.sleep(10)  # Wait for the device to wake up
+						try:
+							sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
+							sock.connect((bt_addr, 1))
+						except bluetooth.BluetoothError as e:
+							print(f"Failed to reconnect: {e}")
+							sock = None
+						if sock is not None:
+							print("Device wake-up successful, continuing fuzzing...")
+							retries = 3
+						else:
+							print("Failed to reconnect after wake-up. Exiting fuzzing.")
+					else:
+						print("Wake-up device not connected, exiting fuzzing.")
+	'''
 	except ConnectionResetError:
 		print("[-] Crash Found - ConnectionResetError detected")
 		if(l2ping(bt_addr) == False):
@@ -131,8 +201,7 @@ def send_sdp_packet(bt_addr, sock, packet, packet_type, process_resp=False):
 			packet_info["crash"] = "y"
 			packet_info["DoS"] = "y"
 			packet_info["crash_info"] = str(e)
-	
-
+	'''
 	return sock, packet_info, response
 
 def send_test_packet(bt_addr,logger):
@@ -153,7 +222,7 @@ def send_test_packet(bt_addr,logger):
 
 	resp_data = parse_sdp_response(response)
 	if resp_data["continuation_state"] != b"\x00":
-		print(f"Continuation state: {resp_data["continuation_state"]}")
+		print(f"Continuation state: {resp_data['continuation_state']}")
 		param_dict, sdp_packet = build_sdp_service_search_attr_request(current_tranid, service_uuids, 0xFFFF, [{"attribute_id":(0x0001 << 16) | 0xFFFF, "isRange": True}], resp_data["continuation_state"])
 		sock, packet_info, response = send_sdp_packet(bt_addr, sock, sdp_packet, 0x02, True)
 		
@@ -201,7 +270,7 @@ def send_initial_sdp_search_attr_req(bt_addr, sock, logger):
 		log_packet(logger, packet_info)
 		resp = parse_sdp_response(response)
 		while resp["continuation_state"] != b'\x00':
-			print(f"Received continuation state: {resp["continuation_state"]}")
+			print(f"Received continuation state: {resp['continuation_state']}")
 			continuation_state_list.append(resp["continuation_state"])
 			current_tranid = (current_tranid + 1) % 0x10000
 			param_dict, packet = build_sdp_service_search_attr_request(tid=current_tranid, uuid_list=uuid_list, max_attr_byte_count=max_attr_byte_count, attribute_list=attr_list, continuation_state=resp["continuation_state"], to_fuzz=False)
@@ -255,6 +324,7 @@ def fuzz_sdp_service_search_attr_garbage_list(bt_addr, sock, logger):
 				resp = parse_sdp_response(response)
 		else:
 			print("Nothing for Service Search Attributes?")
+			break
 
 def fuzz_sdp_service_search_attr_mutate_continuation_state_length(bt_addr, sock, logger): 
 	print("[+] Fuzzing SDP Service Search Attributes (Mutate length of known continuation states)")
@@ -292,6 +362,7 @@ def fuzz_sdp_service_search_attr_mutate_continuation_state_length(bt_addr, sock,
 				resp = parse_sdp_response(response)
 		else:
 			print("Nothing for Service Search Attributes?")	
+			break
 
 
 def fuzz_sdp_service_search_attr_mutate_continuation_state(bt_addr, sock, logger):
@@ -307,6 +378,9 @@ def fuzz_sdp_service_search_attr_mutate_continuation_state(bt_addr, sock, logger
 	for _ in range(0, fuzz_iteration):
 		continuation_state = choice(continuation_state_list)
 		content_length = len(continuation_state) - 1
+		if content_length == 1:
+			print("[-] Continuation state is too short to mutate, skipping...")
+			continue
 		rand_index = randrange(1, content_length)
 		continuation_state_lhs = continuation_state[0:rand_index]
 	
@@ -336,6 +410,7 @@ def fuzz_sdp_service_search_attr_mutate_continuation_state(bt_addr, sock, logger
 				resp = parse_sdp_response(response)
 		else:
 			print("Nothing for Service Search Attributes?")
+			break
 
 
 def fuzz_sdp_service_search_attr_garbage_continuation_state(bt_addr, sock, logger):
@@ -371,6 +446,7 @@ def fuzz_sdp_service_search_attr_garbage_continuation_state(bt_addr, sock, logge
 				resp = parse_sdp_response(response)
 		else:
 			print("Nothing for Service Search Attributes?")
+			break
 
 
 def fuzz_sdp_service_attr_garbage_list(bt_addr, sock, logger):
@@ -391,6 +467,7 @@ def fuzz_sdp_service_attr_garbage_list(bt_addr, sock, logger):
 			log_packet(logger, packet_info)
 		else:
 			print("Nothing for Service Attributes?")
+			break
 
 def fuzz_sdp_service_attr_garbage_continuation_state(bt_addr, sock, logger):
 	print("[+] Fuzzing SDP Service Attributes (Add garbage to continuation state)")
@@ -411,6 +488,7 @@ def fuzz_sdp_service_attr_garbage_continuation_state(bt_addr, sock, logger):
 			log_packet(logger, packet_info)
 		else:
 			print("Nothing for Service Attributes?")
+			break
 
 def fuzz_sdp_service_search_garbage_list(bt_addr, sock, logger):
 	print("[+] Fuzzing SDP Service Search (Add garbage to lists)")
@@ -428,6 +506,7 @@ def fuzz_sdp_service_search_garbage_list(bt_addr, sock, logger):
 			log_packet(logger, packet_info)
 		else:
 			print("Nothing for Service Search?")
+			break
 
 def fuzz_sdp_service_search_garbage_continuation_state(bt_addr, sock, logger):
 	print("[+] Fuzzing SDP Service Search (Add garbage to continuation state)")
@@ -446,6 +525,7 @@ def fuzz_sdp_service_search_garbage_continuation_state(bt_addr, sock, logger):
 			log_packet(logger, packet_info)
 		else:
 			print("Nothing for Service Search?")
+			break
 
 
 
@@ -459,7 +539,6 @@ def sdp_fuzzing(bt_addr, test_info):
 		logger.update(test_info)
 		logger["packet"] = []
 		fuzz_iteration = ConfigManager.get_fuzz_iteration()
-
 		print("Start Fuzzing... Please hit Ctrl + C to finish...")
 		try:
 			sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
@@ -490,17 +569,10 @@ def sdp_fuzzing(bt_addr, test_info):
 					fuzz_sdp_service_attr_garbage_list(bt_addr=bt_addr, sock=sock, logger=logger)
 		
 					fuzz_sdp_service_search_attr_garbage_list(bt_addr=bt_addr, sock=sock, logger=logger)
-
 				#send_test_packet(bt_addr=bt_addr, logger=logger)
 			# 	#break
-				
-		except Exception as e:
-			print("[!] Error Message :", e)
-			print(traceback.format_exc())
-			print("[+] Save logfile")
-			logger["end_time"] = str(datetime.now())
-			logger["count"] = {"all" : packet_count, "crash" : crash_count, "passed" : packet_count-crash_count}
-			#json.dump(logger, f, indent="\t")
+
+		
 
 		except KeyboardInterrupt as k:
 			print("[!] Fuzzing Stopped :", k)
@@ -511,5 +583,15 @@ def sdp_fuzzing(bt_addr, test_info):
 		finally:
 			#print(logger)
 			json.dump(logger, f, indent="\t")
+		'''	
+		except Exception as e:
+			print("[!] Error Message :", e)
+			print(traceback.format_exc())
+			print("[+] Save logfile")
+			logger["end_time"] = str(datetime.now())
+			logger["count"] = {"all" : packet_count, "crash" : crash_count, "passed" : packet_count-crash_count}
+			#json.dump(logger, f, indent="\t")
+		'''
+		
 			
 	
