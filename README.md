@@ -23,10 +23,9 @@ pip3 install ouilookup
 ## Running the tests
 
 1. move to L2Fuzz folder.
-2. run the following command to update and run the latest scripts
+2. run the following command 
 ```
-sudo chmod +x run.sh
-./run.sh
+sudo venv/bin/python3.10 l2fuzz.py
 ```
 3. Choose target device.
 ```

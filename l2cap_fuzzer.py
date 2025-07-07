@@ -1,18 +1,25 @@
 import sys, os, subprocess
 import json, datetime
+import bluetooth
 
 from statemachine import StateMachine, State
 from scapy.all import *
 from scapy.packet import Packet
+from scapy.layers.bluetooth import *
 from random import *
 from collections import OrderedDict
+from pi_interface import send_char_to_pi
 
 
 # Global
+ITERATION_COUNT = 10
 OUR_LOCAL_SCID = 0x40
 pkt_cnt = 0
 crash_cnt = 0
 conn_rsp_flag = 0
+
+class TerminateFuzzing(Exception):
+    pass
 
 # L2CAP Command Info
 L2CAP_CmdDict = {
@@ -297,22 +304,96 @@ def send_pkt(bt_addr, sock, pkt, cmd_code, state):
 		TimeoutError: [Errno 110] Connection timed out 
 		and so on ..
 	"""
+	retries = 3
 	global pkt_cnt
 	global crash_cnt
+	time.sleep(0.1)  # Sleep to avoid flooding the socket
 	pkt_cnt += 1
 	pkt_info = ""
+	while retries > 0:
+		try:
+			sock.send(pkt)
+			print(f"[+] Packet {pkt_cnt} sent: {raw(pkt).hex()}")
+			#print(pkt.summary)
+			pkt_info = {}
+			pkt_info["no"] = pkt_cnt
+			pkt_info["protocol"] = "L2CAP"
+			pkt_info["sended_time"] = str(datetime.now())
+			pkt_info["payload"] = log_pkt(pkt)
+			pkt_info["crash"] = "n"
+			pkt_info["raw"] = raw(pkt).hex()
+			pkt_info["l2cap_state"] = state
+			break
 
-	try:
-		sock.send(pkt)
-		#print(pkt.summary)
-		pkt_info = {}
-		pkt_info["no"] = pkt_cnt
-		pkt_info["protocol"] = "L2CAP"
-		pkt_info["sended_time"] = str(datetime.now())
-		pkt_info["payload"] = log_pkt(pkt)
-		pkt_info["crash"] = "n"
-		pkt_info["l2cap_state"] = state
+		except Exception as e:
+			crash_cnt += 1
+			print("[!] Bluetooth Error :", e)
+			packet_info = {}
+			pkt_info = {}
+			pkt_info["no"] = pkt_cnt
+			pkt_info["protocol"] = "L2CAP"
+			pkt_info["sended_time"] = str(datetime.now())
+			pkt_info["cmd"] = L2CAP_CmdDict.get(cmd_code,'reserved for future use')
+			pkt_info["payload"] = log_pkt(pkt)
+			pkt_info["raw"] = raw(pkt).hex()
+			pkt_info["l2cap_state"] = state
+			pkt_info["sended?"] = "n"			
+			pkt_info["crash"] = "y"
+			packet_info["crash_info"] = str(e)
+			while retries > 0:
+				print(f"Retrying... {retries} attempts left")
+				if sock is not None:
+					sock.close()  # Close the old socket
+				sock = None
+				time.sleep(1)
+				try:
+					sock = BluetoothL2CAPSocket(bt_addr)
+				except Exception as e:
+					print(f"Failed to reconnect: {e}")
+					sock = None
 
+				if sock is not None:
+					print("Socket reconnected successfully.")
+					time.sleep(1)
+					retries = 3
+					break
+				retries -= 1
+				time.sleep(1)
+			if retries == 0:
+				#try final l2ping test
+				print("Max retries reached. Attempting to ping the device...")
+				if l2ping(bt_addr):
+					print("Device is still reachable, continuing fuzzing...")
+					try:
+						sock = BluetoothL2CAPSocket(bt_addr)
+						retries = 3
+					except Exception as e:
+						print(f"Failed to reconnect after ping: {e}")
+				else:
+					print("Ping failed. Trying wake-up.")
+					if send_char_to_pi('a'):
+						print("Wake-up device found, attempting to reconnect...")
+						time.sleep(10)  # Wait for the device to wake up
+						
+						try:
+							sock = BluetoothL2CAPSocket(bt_addr)
+						except Exception as e:
+							print(f"Failed to reconnect: {e}")
+							sock = None
+						
+						if sock is not None:
+							print("Device wake-up successful, continuing fuzzing...")
+							time.sleep(1)
+							retries = 3
+						else:
+							print("Failed to reconnect after wake-up. Exiting fuzzing.")
+							raise TerminateFuzzing("Device wake-up failed, exiting fuzzing.")
+					else:
+						print("Wake-up device not connected, exiting fuzzing.")
+						raise TerminateFuzzing("Device wake-up failed, exiting fuzzing.")
+
+
+	'''
 	except ConnectionResetError:
 		print("[-] Crash Found - ConnectionResetError detected")
 		if(l2ping(bt_addr) == False):
@@ -402,9 +483,7 @@ def send_pkt(bt_addr, sock, pkt, cmd_code, state):
 			pass
 	else: 
 		pass
-
-	# Reset Socket
-	sock = BluetoothL2CAPSocket(bt_addr)
+	'''
 	return sock, pkt_info
 
 
@@ -460,7 +539,7 @@ def random_psm():
 
 
 def connection_state_fuzzing(bt_addr, sock, state_machine, packet_info):
-	iteration = 2500
+	iteration = ITERATION_COUNT
 
 	# 1) Target State : Wait Connect State
 	for i in range(0, iteration):
@@ -483,7 +562,7 @@ def connection_state_fuzzing(bt_addr, sock, state_machine, packet_info):
 
 
 def creation_state_fuzzing(bt_addr, sock, state_machine, packet_info):
-	iteration = 2500
+	iteration = ITERATION_COUNT
 
 	# 2) Target State : Wait Create State
 	for i in range(0, iteration):
@@ -508,7 +587,7 @@ def creation_state_fuzzing(bt_addr, sock, state_machine, packet_info):
 
 
 def configuration_state_fuzzing(bt_addr, sock, state_machine, profile, port, packet_info):
-	iteration = 2500
+	iteration = ITERATION_COUNT
 
 	# From Connection State to Configure State (Closed State -> Wait Config State)
 	while(1):
@@ -704,7 +783,7 @@ def shift_state_fuzzing(bt_addr, sock, state_machine, packet_info):
 	>> Cannot Fuzzing : Wait Move Rsp, Wait Confirm Rsp
 	1) Connection shift from Device to another device : Wait Move Rsp, Wait Confirm Rsp
 	"""
-	iteration = 2500
+	iteration = ITERATION_COUNT
 
 
 	# 1) Target State : Wait Move State
@@ -756,7 +835,7 @@ def disconnection_state_fuzzing(bt_addr, sock, state_machine, port, packet_info)
 	1) Wait Disconnect : Invalid disconn req with invalid psm and invalid packets	
 	"""
 	#print("\n\t[Disconnection State]")	
-	iteration = 2500
+	iteration = ITERATION_COUNT
 
 	# state transition 
 	state_machine.open_to_w_discon()
@@ -822,15 +901,15 @@ def l2cap_fuzzing(bt_addr, profile, port, test_info):
 				# Disconnection State Fuzzing (1/1)
 				disconnection_state_fuzzing(bt_addr, sock, state_machine, port, logger)
 
-		except Exception as e:
-			print("[!] Error Message :", e)
+		except KeyboardInterrupt as k:
+			print("[!] Fuzzing Stopped :", k)
 			print("[+] Save logfile")
 			logger["end_time"] = str(datetime.now())
 			logger["count"] = {"all" : pkt_cnt, "crash" : crash_cnt, "passed" : pkt_cnt-crash_cnt}
 			json.dump(logger, f, indent="\t")
-
-		except KeyboardInterrupt as k:
-			print("[!] Fuzzing Stopped :", k)
+		
+		except TerminateFuzzing as t:
+			print("[!] Fuzzing Terminated :", t)
 			print("[+] Save logfile")
 			logger["end_time"] = str(datetime.now())
 			logger["count"] = {"all" : pkt_cnt, "crash" : crash_cnt, "passed" : pkt_cnt-crash_cnt}
